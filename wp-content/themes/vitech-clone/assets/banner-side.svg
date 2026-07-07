@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="589" height="400" viewBox="0 0 589 400" role="img" aria-label="banner">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b6e3f"/>
+      <stop offset="1" stop-color="#15b268"/>
+    </linearGradient>
+  </defs>
+  <rect width="589" height="400" fill="url(#g)"/>
+  <g opacity="0.14" stroke="#ffffff" stroke-width="6" fill="none">
+    <rect x="430" y="70" width="110" height="260" rx="12"/>
+    <line x1="485" y1="70" x2="485" y2="330"/>
+  </g>
+  <text x="48" y="170" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="bold" fill="#ffffff">GIAO HÀNG</text>
+  <text x="48" y="228" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="bold" fill="#ffffff">MIỄN PHÍ</text>
+  <text x="49" y="280" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#d7f3e4">nội thành — đơn từ 2 triệu</text>
+</svg>

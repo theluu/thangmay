@@ -1,0 +1,7 @@
+.DS_Store
+.playwright-mcp/
+.claude/
+*.log
+wp-content/upgrade/
+wp-content/cache/
+wp-content/uploads/.htaccess

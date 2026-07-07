@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="491" viewBox="0 0 2560 491" role="img" aria-label="banner">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0b6e3f"/>
+      <stop offset="1" stop-color="#15b268"/>
+    </linearGradient>
+  </defs>
+  <rect width="2560" height="491" fill="url(#g)"/>
+  <g opacity="0.12" stroke="#ffffff" stroke-width="10" fill="none">
+    <rect x="2160" y="60" width="220" height="380" rx="18"/>
+    <line x1="2270" y1="60" x2="2270" y2="440"/>
+  </g>
+  <text x="160" y="240" font-family="Arial, Helvetica, sans-serif" font-size="96" font-weight="bold" fill="#ffffff">HỖ TRỢ TƯ VẤN 24/7</text>
+  <text x="163" y="330" font-family="Arial, Helvetica, sans-serif" font-size="48" fill="#d7f3e4">Giao hàng toàn quốc — lắp đặt và bảo trì chuyên nghiệp</text>
+</svg>

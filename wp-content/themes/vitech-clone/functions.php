@@ -1,0 +1,424 @@
+<?php
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+function vitech_clone_setup(): void
+{
+    add_theme_support('title-tag');
+    add_theme_support('post-thumbnails');
+    add_theme_support('html5', ['search-form', 'gallery', 'caption', 'style', 'script']);
+    add_theme_support('woocommerce');
+
+    register_nav_menus([
+        'primary' => __('Menu chính', 'vitech-clone'),
+        'footer' => __('Menu chân trang', 'vitech-clone'),
+    ]);
+}
+add_action('after_setup_theme', 'vitech_clone_setup');
+
+function vitech_clone_assets(): void
+{
+    if (is_admin()) {
+        return;
+    }
+}
+add_action('wp_enqueue_scripts', 'vitech_clone_assets');
+
+function vitech_clone_content_types(): void
+{
+    register_taxonomy('elevator_category', ['elevator'], [
+        'labels' => [
+            'name' => __('Danh mục thang máy', 'vitech-clone'),
+            'singular_name' => __('Danh mục thang máy', 'vitech-clone'),
+        ],
+        'public' => true,
+        'hierarchical' => true,
+        'show_in_rest' => true,
+        'rewrite' => ['slug' => 'danh-muc-thang-may'],
+    ]);
+
+    register_post_type('elevator', [
+        'labels' => [
+            'name' => __('Thang máy', 'vitech-clone'),
+            'singular_name' => __('Thang máy', 'vitech-clone'),
+            'add_new_item' => __('Thêm thang máy', 'vitech-clone'),
+            'edit_item' => __('Sửa thang máy', 'vitech-clone'),
+        ],
+        'public' => true,
+        'has_archive' => true,
+        'menu_icon' => 'dashicons-building',
+        'show_in_rest' => true,
+        'supports' => ['title', 'editor', 'excerpt', 'thumbnail', 'custom-fields'],
+        'taxonomies' => ['elevator_category'],
+        'rewrite' => ['slug' => 'thang-may'],
+    ]);
+
+    register_post_type('vitech_submission', [
+        'labels' => [
+            'name' => __('Form submissions', 'vitech-clone'),
+            'singular_name' => __('Form submission', 'vitech-clone'),
+            'menu_name' => __('Form submissions', 'vitech-clone'),
+            'edit_item' => __('Xem submission', 'vitech-clone'),
+        ],
+        'public' => false,
+        'show_ui' => true,
+        'show_in_menu' => true,
+        'capability_type' => 'post',
+        'capabilities' => [
+            'create_posts' => 'do_not_allow',
+        ],
+        'map_meta_cap' => true,
+        'menu_icon' => 'dashicons-email-alt2',
+        'supports' => ['title', 'custom-fields'],
+    ]);
+}
+add_action('init', 'vitech_clone_content_types');
+
+function vitech_clone_option(string $key, string $fallback = ''): string
+{
+    $value = get_theme_mod($key, $fallback);
+
+    return is_string($value) && $value !== '' ? $value : $fallback;
+}
+
+function vitech_clone_price(int $post_id): string
+{
+    $price = get_post_meta($post_id, '_vitech_price', true);
+
+    return is_string($price) && $price !== '' ? $price : __('Liên hệ', 'vitech-clone');
+}
+
+function vitech_clone_disable_public_canonical(): void
+{
+    remove_action('template_redirect', 'redirect_canonical');
+}
+add_action('template_redirect', 'vitech_clone_disable_public_canonical', 1);
+
+function vitech_clone_proxy_public_pages(): void
+{
+    if (is_admin() || wp_doing_ajax() || wp_is_json_request()) {
+        return;
+    }
+
+    if (isset($_GET['vitech_asset'])) {
+        require get_template_directory() . '/asset-proxy.php';
+        exit;
+    }
+
+    $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+    $path = '/' . ltrim((string) $path, '/');
+
+    if (
+        str_starts_with($path, '/wp-admin') ||
+        str_starts_with($path, '/wp-login.php') ||
+        str_starts_with($path, '/wp-json') ||
+        str_starts_with($path, '/wp-content') ||
+        str_starts_with($path, '/wp-includes')
+    ) {
+        return;
+    }
+
+    require get_template_directory() . '/proxy.php';
+    exit;
+}
+add_action('template_redirect', 'vitech_clone_proxy_public_pages', 2);
+
+function vitech_clone_phone_href(string $phone): string
+{
+    return 'tel:' . preg_replace('/[^0-9+]/', '', $phone);
+}
+
+function vitech_clone_config_fields(): array
+{
+    return [
+        'contact_email' => ['label' => 'Email liên hệ', 'type' => 'email', 'help' => 'Hiển thị ở footer. Bỏ trống sẽ dùng email quản trị.'],
+        'phone_primary' => ['label' => 'Hotline', 'type' => 'text', 'help' => 'Số hotline chính, hiển thị ở header, card sản phẩm, footer.'],
+        'phone_secondary' => ['label' => 'Điện thoại (phụ)', 'type' => 'text', 'help' => 'Số phụ, hiển thị ở các vị trí liên hệ còn lại trên header và footer.'],
+        'company_address' => ['label' => 'Địa chỉ', 'type' => 'text', 'help' => 'Hiển thị ở header và footer.'],
+        'company_map_embed_url' => ['label' => 'Google Maps (embed URL)', 'type' => 'url', 'help' => 'URL trong src của iframe Google Maps (Chia sẻ → Nhúng bản đồ), hiển thị ở trang Liên hệ.'],
+        'fanpage_url' => ['label' => 'Fanpage Facebook', 'type' => 'url', 'help' => 'Link fanpage cho icon Facebook nổi và footer.'],
+        'zalo_phone' => ['label' => 'Số Zalo', 'type' => 'text', 'help' => 'Dùng cho nút Zalo nổi (zalo.me/...). Bỏ trống sẽ dùng Hotline.'],
+        'banner_image_1' => ['label' => 'Banner slider 1', 'type' => 'url', 'help' => 'URL ảnh banner slider trang chủ (tỷ lệ ~2560x1181). Bỏ trống dùng banner mặc định.'],
+        'banner_image_2' => ['label' => 'Banner slider 2', 'type' => 'url', 'help' => ''],
+        'banner_image_3' => ['label' => 'Banner slider 3', 'type' => 'url', 'help' => ''],
+        'recaptcha_site_key' => ['label' => 'reCAPTCHA v3 Site key', 'type' => 'text', 'help' => 'Bỏ trống để tắt reCAPTCHA cho form liên hệ / báo giá / đánh giá.'],
+        'recaptcha_secret_key' => ['label' => 'reCAPTCHA v3 Secret key', 'type' => 'text', 'help' => ''],
+    ];
+}
+
+function vitech_clone_config_menu(): void
+{
+    add_menu_page(
+        'Cấu hình website',
+        'Cấu hình',
+        'manage_options',
+        'vitech-config',
+        'vitech_clone_render_config_page',
+        'dashicons-admin-generic',
+        61
+    );
+}
+add_action('admin_menu', 'vitech_clone_config_menu');
+
+function vitech_clone_render_config_page(): void
+{
+    if (!current_user_can('manage_options')) {
+        wp_die('Bạn không có quyền truy cập trang này.');
+    }
+
+    $fields = vitech_clone_config_fields();
+    $saved = false;
+
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && check_admin_referer('vitech_config_save', 'vitech_config_nonce')) {
+        foreach ($fields as $key => $field) {
+            $raw = isset($_POST[$key]) ? wp_unslash($_POST[$key]) : '';
+            $value = match ($field['type']) {
+                'email' => sanitize_email($raw),
+                'url' => esc_url_raw(trim((string) $raw)),
+                default => sanitize_text_field($raw),
+            };
+            set_theme_mod($key, $value);
+        }
+        $saved = true;
+    }
+
+    echo '<div class="wrap"><h1>Cấu hình website</h1>';
+    if ($saved) {
+        echo '<div class="notice notice-success is-dismissible"><p>Đã lưu cấu hình.</p></div>';
+    }
+    echo '<form method="post"><table class="form-table" role="presentation">';
+    wp_nonce_field('vitech_config_save', 'vitech_config_nonce');
+
+    foreach ($fields as $key => $field) {
+        $value = get_theme_mod($key, '');
+        echo '<tr><th scope="row"><label for="' . esc_attr($key) . '">' . esc_html($field['label']) . '</label></th><td>';
+        echo '<input type="text" class="regular-text" id="' . esc_attr($key) . '" name="' . esc_attr($key) . '" value="' . esc_attr(is_string($value) ? $value : '') . '" />';
+        if ($field['help'] !== '') {
+            echo '<p class="description">' . esc_html($field['help']) . '</p>';
+        }
+        echo '</td></tr>';
+    }
+
+    echo '</table>';
+    submit_button('Lưu cấu hình');
+    echo '</form></div>';
+}
+
+// reCAPTCHA v3: đăng ký key loại "reCAPTCHA v3" (thêm cả domain thang-may.ddev.site)
+// tại https://www.google.com/recaptcha/admin rồi lưu bằng:
+// set_theme_mod('recaptcha_site_key', '...'); set_theme_mod('recaptcha_secret_key', '...');
+// Chưa cấu hình key thì form hoạt động bình thường, không chạy captcha.
+function vitech_clone_recaptcha_site_key(): string
+{
+    return vitech_clone_option('recaptcha_site_key', '');
+}
+
+function vitech_clone_recaptcha_secret_key(): string
+{
+    return vitech_clone_option('recaptcha_secret_key', '');
+}
+
+function vitech_clone_recaptcha_min_score(): float
+{
+    $score = (float) vitech_clone_option('recaptcha_min_score', '0.5');
+
+    return $score > 0 && $score <= 1 ? $score : 0.5;
+}
+
+function vitech_clone_recaptcha_enabled_for(string $form_type): bool
+{
+    return in_array($form_type, ['contact', 'quote', 'review'], true)
+        && vitech_clone_recaptcha_site_key() !== ''
+        && vitech_clone_recaptcha_secret_key() !== '';
+}
+
+function vitech_clone_recaptcha_action(string $form_type): string
+{
+    return 'vitech_' . $form_type;
+}
+
+function vitech_clone_verify_recaptcha(string $form_type): string
+{
+    $token = isset($_POST['vitech_recaptcha_token']) ? trim((string) wp_unslash($_POST['vitech_recaptcha_token'])) : '';
+    if ($token === '') {
+        return 'Không xác minh được reCAPTCHA. Vui lòng tải lại trang và thử lại.';
+    }
+
+    $response = wp_remote_post('https://www.google.com/recaptcha/api/siteverify', [
+        'timeout' => 10,
+        'body' => [
+            'secret' => vitech_clone_recaptcha_secret_key(),
+            'response' => $token,
+            'remoteip' => $_SERVER['REMOTE_ADDR'] ?? '',
+        ],
+    ]);
+
+    if (is_wp_error($response)) {
+        return 'Không xác minh được reCAPTCHA. Vui lòng thử lại.';
+    }
+
+    $body = json_decode(wp_remote_retrieve_body($response), true);
+    if (empty($body['success'])) {
+        return 'Xác minh reCAPTCHA thất bại. Vui lòng tải lại trang và thử lại.';
+    }
+
+    if (($body['action'] ?? '') !== vitech_clone_recaptcha_action($form_type)) {
+        return 'Xác minh reCAPTCHA không hợp lệ. Vui lòng tải lại trang và thử lại.';
+    }
+
+    if ((float) ($body['score'] ?? 0) < vitech_clone_recaptcha_min_score()) {
+        return 'Hệ thống nghi ngờ truy cập tự động. Vui lòng thử lại hoặc liên hệ trực tiếp qua hotline.';
+    }
+
+    return '';
+}
+
+// Chặn spam form đánh giá sản phẩm (comment/review) bằng reCAPTCHA v3.
+function vitech_clone_verify_review_recaptcha(array $commentdata): array
+{
+    if (is_admin() || wp_doing_ajax() || is_user_logged_in()) {
+        return $commentdata;
+    }
+
+    if (!vitech_clone_recaptcha_enabled_for('review')) {
+        return $commentdata;
+    }
+
+    $error = vitech_clone_verify_recaptcha('review');
+    if ($error !== '') {
+        wp_die(
+            esc_html($error),
+            'Xác minh reCAPTCHA',
+            ['response' => 403, 'back_link' => true]
+        );
+    }
+
+    return $commentdata;
+}
+add_filter('preprocess_comment', 'vitech_clone_verify_review_recaptcha');
+
+function vitech_clone_handle_form_submission(): void
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        return;
+    }
+
+    $action = isset($_POST['vitech_form_action']) ? sanitize_key(wp_unslash($_POST['vitech_form_action'])) : '';
+    if ($action !== 'submit') {
+        return;
+    }
+
+    $form_type = isset($_POST['vitech_form_type']) ? sanitize_key(wp_unslash($_POST['vitech_form_type'])) : 'contact';
+    if (!in_array($form_type, ['contact', 'quote'], true)) {
+        $form_type = 'contact';
+    }
+
+    $redirect = wp_get_referer() ?: home_url($form_type === 'quote' ? '/yeu-cau-bao-gia/' : '/lien-he/');
+    $redirect = remove_query_arg(['vitech_form_notice'], $redirect);
+
+    $nonce = isset($_POST['vitech_form_nonce']) ? sanitize_text_field(wp_unslash($_POST['vitech_form_nonce'])) : '';
+    if (!wp_verify_nonce($nonce, 'vitech_form_submit_' . $form_type)) {
+        vitech_clone_redirect_with_form_notice($redirect, 'error', ['Phiên gửi form đã hết hạn. Vui lòng thử lại.']);
+    }
+
+    $name = isset($_POST['vitech_name']) ? sanitize_text_field(wp_unslash($_POST['vitech_name'])) : '';
+    $email = isset($_POST['vitech_email']) ? sanitize_email(wp_unslash($_POST['vitech_email'])) : '';
+    $phone = isset($_POST['vitech_phone']) ? sanitize_text_field(wp_unslash($_POST['vitech_phone'])) : '';
+    $message = isset($_POST['vitech_message']) ? sanitize_textarea_field(wp_unslash($_POST['vitech_message'])) : '';
+    $product = isset($_POST['vitech_product']) ? sanitize_text_field(wp_unslash($_POST['vitech_product'])) : '';
+    $source_url = isset($_POST['vitech_source_url']) ? esc_url_raw(wp_unslash($_POST['vitech_source_url'])) : $redirect;
+    $honeypot = isset($_POST['vitech_company']) ? trim((string) wp_unslash($_POST['vitech_company'])) : '';
+
+    if ($honeypot !== '') {
+        vitech_clone_redirect_with_form_notice($redirect, 'success', ['Cảm ơn anh/chị. Thông tin đã được ghi nhận.']);
+    }
+
+    $errors = [];
+    if ($name === '') {
+        $errors[] = 'Vui lòng nhập họ và tên.';
+    }
+    if ($email === '' || !is_email($email)) {
+        $errors[] = 'Vui lòng nhập email hợp lệ.';
+    }
+    if ($phone === '' || strlen(preg_replace('/[^0-9]/', '', $phone)) < 8) {
+        $errors[] = 'Vui lòng nhập số điện thoại hợp lệ.';
+    }
+    if ($message === '') {
+        $errors[] = $form_type === 'quote' ? 'Vui lòng nhập nhu cầu báo giá.' : 'Vui lòng nhập nội dung liên hệ.';
+    }
+    if (vitech_clone_recaptcha_enabled_for($form_type)) {
+        $captcha_error = vitech_clone_verify_recaptcha($form_type);
+        if ($captcha_error !== '') {
+            $errors[] = $captcha_error;
+        }
+    }
+
+    if ($errors !== []) {
+        vitech_clone_redirect_with_form_notice($redirect, 'error', $errors);
+    }
+
+    $type_label = $form_type === 'quote' ? 'Yêu cầu báo giá' : 'Liên hệ';
+    $submission_id = wp_insert_post([
+        'post_type' => 'vitech_submission',
+        'post_status' => 'private',
+        'post_title' => sprintf('%s - %s - %s', $type_label, $name, current_time('Y-m-d H:i')),
+        'post_content' => $message,
+    ], true);
+
+    if (is_wp_error($submission_id)) {
+        vitech_clone_redirect_with_form_notice($redirect, 'error', ['Không lưu được dữ liệu. Vui lòng thử lại sau.']);
+    }
+
+    update_post_meta($submission_id, '_vitech_form_type', $form_type);
+    update_post_meta($submission_id, '_vitech_name', $name);
+    update_post_meta($submission_id, '_vitech_email', $email);
+    update_post_meta($submission_id, '_vitech_phone', $phone);
+    update_post_meta($submission_id, '_vitech_product', $product);
+    update_post_meta($submission_id, '_vitech_message', $message);
+    update_post_meta($submission_id, '_vitech_source_url', $source_url);
+    update_post_meta($submission_id, '_vitech_ip', sanitize_text_field($_SERVER['REMOTE_ADDR'] ?? ''));
+    update_post_meta($submission_id, '_vitech_user_agent', sanitize_text_field($_SERVER['HTTP_USER_AGENT'] ?? ''));
+
+    vitech_clone_redirect_with_form_notice($redirect, 'success', ['Cảm ơn anh/chị. Thông tin đã được lưu, đội ngũ tư vấn sẽ liên hệ sớm.']);
+}
+add_action('template_redirect', 'vitech_clone_handle_form_submission', 0);
+
+function vitech_clone_redirect_with_form_notice(string $redirect, string $status, array $messages): void
+{
+    $key = wp_generate_uuid4();
+    set_transient('vitech_form_notice_' . $key, [
+        'status' => $status,
+        'messages' => array_values($messages),
+    ], 10 * MINUTE_IN_SECONDS);
+
+    wp_safe_redirect(add_query_arg('vitech_form_notice', rawurlencode($key), $redirect));
+    exit;
+}
+
+function vitech_clone_submission_columns(array $columns): array
+{
+    return [
+        'cb' => $columns['cb'] ?? '<input type="checkbox" />',
+        'title' => __('Submission', 'vitech-clone'),
+        'form_type' => __('Loại form', 'vitech-clone'),
+        'contact' => __('Liên hệ', 'vitech-clone'),
+        'date' => $columns['date'] ?? __('Date'),
+    ];
+}
+add_filter('manage_vitech_submission_posts_columns', 'vitech_clone_submission_columns');
+
+function vitech_clone_submission_column_content(string $column, int $post_id): void
+{
+    if ($column === 'form_type') {
+        echo esc_html(get_post_meta($post_id, '_vitech_form_type', true) === 'quote' ? 'Yêu cầu báo giá' : 'Liên hệ');
+    }
+
+    if ($column === 'contact') {
+        $email = get_post_meta($post_id, '_vitech_email', true);
+        $phone = get_post_meta($post_id, '_vitech_phone', true);
+        echo esc_html(trim($email . ' / ' . $phone, ' /'));
+    }
+}
+add_action('manage_vitech_submission_posts_custom_column', 'vitech_clone_submission_column_content', 10, 2);
