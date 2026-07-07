@@ -53,6 +53,11 @@ if ($single_product instanceof WP_Post) {
 }
 
 $local_page = is_page() ? get_queried_object() : null;
+// Trang Tin tức local dùng trang danh sách tin của nguồn làm template.
+if ($local_page instanceof WP_Post && $local_page->post_name === 'tin-tuc') {
+    $request_path = '/tin-tuc-su-kien/';
+    $request_query = null;
+}
 $search_query = isset($_GET['s']) ? trim(sanitize_text_field(wp_unslash($_GET['s']))) : '';
 
 $source_url = $source_host . $request_path;
@@ -382,7 +387,12 @@ function vitech_clone_inject_local_page(string $html, WP_Post $page): string
         return vitech_clone_inject_documents($html);
     }
 
-    $allowed_pages = ['tin-tuc', 'lien-he', 'yeu-cau-bao-gia'];
+    // Trang Tin tức: danh sách bài viết local trong layout tin tức của nguồn.
+    if ($page->post_name === 'tin-tuc') {
+        return vitech_clone_inject_news_listing($html);
+    }
+
+    $allowed_pages = ['lien-he', 'yeu-cau-bao-gia'];
     // Trang Giới thiệu: mặc định hiển thị nguyên bản trang nguồn; khi admin
     // điền nội dung vào page local thì nội dung đó thay thế.
     if ($page->post_name === 'gioi-thieu' && trim($page->post_content) !== '') {
@@ -454,6 +464,59 @@ function vitech_clone_inject_documents(string $html): string
         },
         $html
     ) ?? $html;
+}
+
+// Trang Tin tức: thay các item bài viết của nguồn bằng bài viết local,
+// giữ nguyên layout danh sách của trang nguồn.
+function vitech_clone_inject_news_listing(string $html): string
+{
+    $site_name = get_bloginfo('name') ?: 'Thang Máy';
+    $html = preg_replace('#<title>.*?</title>#su', '<title>' . esc_html('Tin tức & sự kiện - ' . $site_name) . '</title>', $html, 1) ?? $html;
+
+    $posts = get_posts([
+        'post_type' => 'post',
+        'post_status' => 'publish',
+        'numberposts' => 48,
+    ]);
+
+    if ($posts === []) {
+        return $html;
+    }
+
+    $items = '';
+    foreach ($posts as $post) {
+        $title = mb_strtoupper(get_the_title($post));
+        $url = get_permalink($post);
+        $image = get_the_post_thumbnail_url($post, 'full');
+        if (!$image) {
+            $image = vitech_clone_proxy_placeholder_image();
+        }
+
+        $items .= '<div class="news-post-news"><div class="box__news__inner">'
+            . '<div class="box__thumb__img"><a href="' . esc_url($url) . '" title="' . esc_attr($title) . '">'
+            . '<img width="900" height="550" src="' . esc_url($image) . '" class="attachment-full size-full wp-post-image" alt="' . esc_attr($title) . '" decoding="async" loading="lazy" />'
+            . '</a></div>'
+            . '<div class="box__content"><h3><a href="' . esc_url($url) . '" title="' . esc_attr($title) . '">' . esc_html($title) . '</a></h3>'
+            . '<a class="more" href="' . esc_url($url) . '" >Xem chi tiết <i class="fa-solid fa-arrow-right-long"></i></a>'
+            . '</div></div></div>';
+    }
+
+    $first = true;
+    $html = preg_replace_callback(
+        '#<div class="news-post-news">.*?</div>\s*</div>\s*</div>#s',
+        static function () use (&$first, $items): string {
+            if (!$first) {
+                return '';
+            }
+            $first = false;
+
+            return $items;
+        },
+        $html
+    ) ?? $html;
+
+    // Hiển thị toàn bộ bài trên một trang nên bỏ phân trang của nguồn.
+    return preg_replace('#<ul class="page-numbers nav-pagination[^"]*">.*?</ul>#s', '', $html, 1) ?? $html;
 }
 
 function vitech_clone_replace_page_meta(string $html, WP_Post $page): string
@@ -1603,7 +1666,7 @@ function vitech_clone_inject_single_post(string $html, WP_Post $post, string $te
 
 function vitech_clone_post_date_label(WP_Post $post): string
 {
-    $meridiem = get_the_date('A', $post) === 'PM' ? 'Chiều' : 'Sáng';
+    $meridiem = (int) get_the_date('G', $post) >= 12 ? 'Chiều' : 'Sáng';
 
     return get_the_date('d/m/Y g:i', $post) . ' ' . $meridiem;
 }
