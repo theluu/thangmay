@@ -998,21 +998,38 @@ function vitech_clone_dynamic_woocommerce_products(): array
         if (!$image) {
             $image = get_post_meta($wc_product->get_id(), '_vitech_image_url', true);
         }
-        $price = $wc_product->get_price_html();
-        if ($price === '') {
-            $price = get_post_meta($wc_product->get_id(), '_vitech_price_label', true);
-        }
+        $price = vitech_clone_product_price_label($wc_product->get_id());
 
         $products[] = [
             'id' => $wc_product->get_id(),
             'title' => $wc_product->get_name(),
             'url' => get_permalink($wc_product->get_id()),
-            'price' => is_string($price) && $price !== '' ? wp_strip_all_tags($price) : __('Liên hệ báo giá', 'vitech-clone'),
+            'price' => $price,
             'image' => is_string($image) && $image !== '' ? $image : vitech_clone_proxy_placeholder_image(),
         ];
     }
 
     return $products;
+}
+
+// Giá hiển thị: lấy từ giá WooCommerce (ưu tiên giá sale) và format sạch;
+// không dùng price_html vì chứa text screen-reader gây dính chùm khi strip tag.
+function vitech_clone_product_price_label(int $post_id): string
+{
+    if (function_exists('wc_get_product')) {
+        $product = wc_get_product($post_id);
+        if ($product instanceof WC_Product && $product->get_price() !== '') {
+            $label = html_entity_decode(wp_strip_all_tags(wc_price($product->get_price())), ENT_QUOTES, 'UTF-8');
+            if ($product->is_on_sale() && $product->get_regular_price() !== '') {
+                $regular = html_entity_decode(wp_strip_all_tags(wc_price($product->get_regular_price())), ENT_QUOTES, 'UTF-8');
+                $label .= ' (giảm từ ' . $regular . ')';
+            }
+
+            return $label;
+        }
+    }
+
+    return vitech_clone_price($post_id);
 }
 
 function vitech_clone_replace_document_meta(string $html): string
@@ -1746,16 +1763,7 @@ function vitech_clone_term_products(WP_Term $term): array
             $image = get_post_meta($post_id, '_vitech_image_url', true);
         }
 
-        $price = '';
-        if (function_exists('wc_get_product')) {
-            $wc_product = wc_get_product($post_id);
-            if ($wc_product instanceof WC_Product) {
-                $price = wp_strip_all_tags($wc_product->get_price_html());
-            }
-        }
-        if ($price === '') {
-            $price = vitech_clone_price($post_id);
-        }
+        $price = vitech_clone_product_price_label($post_id);
 
         $products[] = [
             'id' => $post_id,
@@ -1812,13 +1820,7 @@ function vitech_clone_inject_single_product(string $html, WP_Post $post, string 
     $html = str_replace('<!-- vitech-gallery-slide -->', $slide, $html);
     $html = preg_replace('#<div class="product-thumbnails.*?</div><!-- \.product-thumbnails -->#s', '', $html, 1) ?? $html;
 
-    $price = '';
-    if ($wc_product instanceof WC_Product) {
-        $price = wp_strip_all_tags($wc_product->get_price_html());
-    }
-    if ($price === '') {
-        $price = vitech_clone_price($post->ID);
-    }
+    $price = vitech_clone_product_price_label($post->ID);
     $html = preg_replace(
         '#(<p class="price2"><span>).*?(</span></p>)#su',
         '$1' . esc_html('Giá : ' . $price) . '$2',
