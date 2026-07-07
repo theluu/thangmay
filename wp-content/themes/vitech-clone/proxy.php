@@ -376,7 +376,17 @@ function vitech_clone_form_notice(): string
 
 function vitech_clone_inject_local_page(string $html, WP_Post $page): string
 {
+    // Trang Tài liệu: danh sách render từ CPT vitech_document (quản trị trong admin).
+    if ($page->post_name === 'tai-lieu') {
+        return vitech_clone_inject_documents($html);
+    }
+
     $allowed_pages = ['tin-tuc', 'lien-he', 'yeu-cau-bao-gia'];
+    // Trang Giới thiệu: mặc định hiển thị nguyên bản trang nguồn; khi admin
+    // điền nội dung vào page local thì nội dung đó thay thế.
+    if ($page->post_name === 'gioi-thieu' && trim($page->post_content) !== '') {
+        $allowed_pages[] = 'gioi-thieu';
+    }
     if (!in_array($page->post_name, $allowed_pages, true)) {
         return $html;
     }
@@ -389,6 +399,59 @@ function vitech_clone_inject_local_page(string $html, WP_Post $page): string
         $main . '$1',
         $html,
         1
+    ) ?? $html;
+}
+
+// Trang Tài liệu: thay các item catalog của nguồn bằng tài liệu quản trị
+// trong admin (CPT vitech_document): ảnh bìa + link PDF + tiêu đề.
+function vitech_clone_inject_documents(string $html): string
+{
+    $docs = get_posts([
+        'post_type' => 'vitech_document',
+        'post_status' => 'publish',
+        'numberposts' => 48,
+        'orderby' => 'menu_order date',
+        'order' => 'ASC',
+    ]);
+
+    if ($docs === []) {
+        return $html;
+    }
+
+    $items = '';
+    foreach ($docs as $doc) {
+        $title = get_the_title($doc);
+        $file = get_post_meta($doc->ID, '_vitech_doc_file', true);
+        $file = is_string($file) && $file !== '' ? $file : '#';
+        $cover = get_the_post_thumbnail_url($doc->ID, 'full');
+        if (!$cover) {
+            $meta_cover = get_post_meta($doc->ID, '_vitech_doc_cover', true);
+            $cover = is_string($meta_cover) && $meta_cover !== ''
+                ? $meta_cover
+                : get_template_directory_uri() . '/assets/catalog-cover.svg';
+        }
+
+        $items .= '<div class="news-post-news"><div class="box__news__inner">'
+            . '<div class="box__thumb__img"><a href="' . esc_url($file) . '" target="_blank" title="' . esc_attr($title) . '">'
+            . '<img width="1810" height="2560" src="' . esc_url($cover) . '" class="attachment-full size-full wp-post-image" alt="' . esc_attr($title) . '" decoding="async" loading="lazy" />'
+            . '</a></div>'
+            . '<div class="box__content"><h3><a href="' . esc_url($file) . '" target="_blank" title="' . esc_attr($title) . '">' . esc_html($title) . '</a></h3>'
+            . '<a class="more" href="' . esc_url($file) . '" target="_blank" >Tải file <i class="fa-solid fa-arrow-right-long"></i></a>'
+            . '</div></div></div>';
+    }
+
+    $first = true;
+    return preg_replace_callback(
+        '#<div class="news-post-news">.*?</div>\s*</div>\s*</div>#s',
+        static function () use (&$first, $items): string {
+            if (!$first) {
+                return '';
+            }
+            $first = false;
+
+            return $items;
+        },
+        $html
     ) ?? $html;
 }
 

@@ -55,6 +55,25 @@ function vitech_clone_content_types(): void
         'rewrite' => ['slug' => 'thang-may'],
     ]);
 
+    register_post_type('vitech_document', [
+        'labels' => [
+            'name' => __('Tài liệu', 'vitech-clone'),
+            'singular_name' => __('Tài liệu', 'vitech-clone'),
+            'menu_name' => __('Tài liệu', 'vitech-clone'),
+            'add_new' => __('Thêm tài liệu', 'vitech-clone'),
+            'add_new_item' => __('Thêm tài liệu mới', 'vitech-clone'),
+            'edit_item' => __('Sửa tài liệu', 'vitech-clone'),
+            'featured_image' => __('Ảnh bìa tài liệu', 'vitech-clone'),
+            'set_featured_image' => __('Chọn ảnh bìa', 'vitech-clone'),
+            'remove_featured_image' => __('Bỏ ảnh bìa', 'vitech-clone'),
+        ],
+        'public' => false,
+        'show_ui' => true,
+        'menu_icon' => 'dashicons-media-document',
+        'menu_position' => 21,
+        'supports' => ['title', 'thumbnail'],
+    ]);
+
     register_post_type('vitech_submission', [
         'labels' => [
             'name' => __('Form submissions', 'vitech-clone'),
@@ -129,6 +148,100 @@ function vitech_clone_phone_href(string $phone): string
 {
     return 'tel:' . preg_replace('/[^0-9+]/', '', $phone);
 }
+
+// ===== Quản trị Tài liệu (CPT vitech_document) =====
+function vitech_clone_document_metabox(): void
+{
+    add_meta_box('vitech_document_file', 'File tài liệu (PDF)', 'vitech_clone_render_document_metabox', 'vitech_document', 'normal', 'high');
+}
+add_action('add_meta_boxes', 'vitech_clone_document_metabox');
+
+function vitech_clone_render_document_metabox(WP_Post $post): void
+{
+    wp_nonce_field('vitech_document_save', 'vitech_document_nonce');
+    $file = get_post_meta($post->ID, '_vitech_doc_file', true);
+    echo '<p><input type="url" class="widefat" id="vitech_doc_file" name="vitech_doc_file" value="' . esc_attr(is_string($file) ? $file : '') . '" placeholder="URL file PDF" /></p>';
+    echo '<p><button type="button" class="button" id="vitech_doc_file_upload">Tải lên / chọn file PDF</button> ';
+    if (is_string($file) && $file !== '') {
+        echo '<a href="' . esc_url($file) . '" target="_blank">Xem file hiện tại</a>';
+    }
+    echo '</p><p class="description">Bấm nút để tải PDF lên thư viện media hoặc dán URL trực tiếp. Ảnh bìa đặt ở khung "Ảnh bìa tài liệu" bên phải.</p>';
+}
+
+function vitech_clone_document_admin_assets(string $hook): void
+{
+    if (!in_array($hook, ['post.php', 'post-new.php'], true) || get_current_screen()?->post_type !== 'vitech_document') {
+        return;
+    }
+
+    wp_enqueue_media();
+    $script = <<<'JS'
+jQuery(function ($) {
+    var frame;
+    $('#vitech_doc_file_upload').on('click', function (e) {
+        e.preventDefault();
+        if (frame) { frame.open(); return; }
+        frame = wp.media({
+            title: 'Chọn hoặc tải lên file PDF',
+            button: { text: 'Dùng file này' },
+            library: { type: 'application/pdf' },
+            multiple: false
+        });
+        frame.on('select', function () {
+            var att = frame.state().get('selection').first().toJSON();
+            $('#vitech_doc_file').val(att.url);
+        });
+        frame.open();
+    });
+});
+JS;
+    wp_add_inline_script('jquery', $script);
+}
+add_action('admin_enqueue_scripts', 'vitech_clone_document_admin_assets');
+
+function vitech_clone_document_save(int $post_id): void
+{
+    $nonce = isset($_POST['vitech_document_nonce']) ? sanitize_text_field(wp_unslash($_POST['vitech_document_nonce'])) : '';
+    if (!wp_verify_nonce($nonce, 'vitech_document_save') || !current_user_can('edit_post', $post_id)) {
+        return;
+    }
+
+    $file = isset($_POST['vitech_doc_file']) ? esc_url_raw(trim((string) wp_unslash($_POST['vitech_doc_file']))) : '';
+    update_post_meta($post_id, '_vitech_doc_file', $file);
+}
+add_action('save_post_vitech_document', 'vitech_clone_document_save');
+
+function vitech_clone_document_columns(array $columns): array
+{
+    return [
+        'cb' => $columns['cb'] ?? '<input type="checkbox" />',
+        'cover' => __('Ảnh bìa', 'vitech-clone'),
+        'title' => __('Tên tài liệu', 'vitech-clone'),
+        'doc_file' => __('File PDF', 'vitech-clone'),
+        'date' => $columns['date'] ?? __('Date'),
+    ];
+}
+add_filter('manage_vitech_document_posts_columns', 'vitech_clone_document_columns');
+
+function vitech_clone_document_column_content(string $column, int $post_id): void
+{
+    if ($column === 'cover') {
+        $thumb = get_the_post_thumbnail_url($post_id, 'thumbnail');
+        if (!$thumb) {
+            $meta_cover = get_post_meta($post_id, '_vitech_doc_cover', true);
+            $thumb = is_string($meta_cover) ? $meta_cover : '';
+        }
+        echo $thumb ? '<img src="' . esc_url($thumb) . '" style="width:44px;height:60px;object-fit:cover;border-radius:3px;" />' : '—';
+    }
+
+    if ($column === 'doc_file') {
+        $file = get_post_meta($post_id, '_vitech_doc_file', true);
+        echo is_string($file) && $file !== ''
+            ? '<a href="' . esc_url($file) . '" target="_blank">' . esc_html(basename(parse_url($file, PHP_URL_PATH) ?: 'file')) . '</a>'
+            : '<span style="color:#d63638">Chưa có file</span>';
+    }
+}
+add_action('manage_vitech_document_posts_custom_column', 'vitech_clone_document_column_content', 10, 2);
 
 function vitech_clone_config_fields(): array
 {
