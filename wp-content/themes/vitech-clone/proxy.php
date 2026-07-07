@@ -174,6 +174,19 @@ if (str_contains($html, 'name="vitech_recaptcha_token"') && !str_contains($html,
     $html = str_replace('</body>', $recaptcha_scripts . '</body>', $html);
 }
 
+// Nút "Xem nhanh": JS quick-view của theme nguồn gọi AJAX không tồn tại ở
+// local nên click không phản hồi. Bắt click ở capture phase và điều hướng
+// thẳng tới trang sản phẩm.
+if (str_contains($html, 'class="quick-view"')) {
+    $quickview_script = '<script>document.addEventListener("click",function(event){'
+        . 'var link=event.target.closest?event.target.closest("a.quick-view"):null;'
+        . 'if(!link||!link.getAttribute("href"))return;'
+        . 'event.preventDefault();event.stopImmediatePropagation();'
+        . 'window.location.href=link.getAttribute("href");'
+        . '},true);</script>';
+    $html = str_replace('</body>', $quickview_script . '</body>', $html);
+}
+
 echo $html;
 
 function vitech_clone_inject_dynamic_data(string $html): string
@@ -185,8 +198,6 @@ function vitech_clone_inject_dynamic_data(string $html): string
     $phone_href = vitech_clone_proxy_phone_href($phone);
 
     $html = vitech_clone_replace_document_meta($html);
-    $html = vitech_clone_replace_logo($html);
-    $html = vitech_clone_replace_source_banners($html);
 
     $home_sections_replaced = false;
     if ($terms && is_front_page()) {
@@ -219,7 +230,6 @@ function vitech_clone_inject_dynamic_data(string $html): string
         if (!$home_sections_replaced) {
             $html = vitech_clone_replace_product_section_headings($html, $terms);
         }
-        $html = vitech_clone_replace_home_category_labels($html, $terms);
         $html = vitech_clone_replace_mobile_product_menu($html, $terms);
     }
 
@@ -366,7 +376,7 @@ function vitech_clone_form_notice(): string
 
 function vitech_clone_inject_local_page(string $html, WP_Post $page): string
 {
-    $allowed_pages = ['gioi-thieu', 'tai-lieu', 'tin-tuc', 'lien-he', 'yeu-cau-bao-gia'];
+    $allowed_pages = ['tin-tuc', 'lien-he', 'yeu-cau-bao-gia'];
     if (!in_array($page->post_name, $allowed_pages, true)) {
         return $html;
     }
@@ -692,7 +702,7 @@ function vitech_clone_replace_home_product_sections(string $html, array $terms, 
 
             $section = preg_replace(
                 '#(<h2 class="heading clear">\s*<span>\s*).*?(\s*</span>\s*<a href=")[^"]*("[^>]*>\s*Xem tất cả(?:&gt;|>){2}\s*</a>)#su',
-                '$1' . vitech_clone_preg_replacement(esc_html(mb_strtoupper($term->name)))
+                '$1' . vitech_clone_preg_replacement(esc_html(vitech_clone_term_upper($term->name)))
                     . '$2' . vitech_clone_preg_replacement(esc_url(get_term_link($term))) . '$3',
                 $matches[0],
                 1
@@ -741,11 +751,6 @@ function vitech_clone_apply_site_config(string $html, string $phone, string $pho
     $secondary = vitech_clone_option('phone_secondary', '');
     $secondary = $secondary !== '' ? $secondary : $phone;
     $secondary_href = vitech_clone_proxy_phone_href($secondary);
-
-    $html = preg_replace('/tel:\s?0865\s?253\s?588/u', esc_url($phone_href), $html) ?? $html;
-    $html = preg_replace('/0865\s?253\s?588/u', esc_html($phone), $html) ?? $html;
-    $html = preg_replace('/tel:\s?0988\s?247\s?809|tel:\s?0865\s?140\s?588/u', esc_url($secondary_href), $html) ?? $html;
-    $html = preg_replace('/0988\s?247\s?809|0865\s?140\s?588/u', esc_html($secondary), $html) ?? $html;
 
     $address = vitech_clone_option('company_address', '');
     if ($address !== '') {
@@ -1095,7 +1100,7 @@ function vitech_clone_replace_product_menu(string $html, array $terms): string
         $items .= sprintf(
             "\n\t<li class=\"menu-item menu-item-type-taxonomy menu-item-object-product_cat\"><a href=\"%s\">%s</a></li>",
             esc_url(get_term_link($term)),
-            esc_html(mb_strtoupper($term->name))
+            esc_html(vitech_clone_term_upper($term->name))
         );
     }
 
@@ -1123,7 +1128,7 @@ function vitech_clone_replace_sidebar_product_categories(string $html, array $te
             "\n<li class=\"%s\"><a href=\"%s\">%s</a></li>",
             esc_attr(implode(' ', $classes)),
             esc_url(get_term_link($term)),
-            esc_html(mb_strtoupper($term->name))
+            esc_html(vitech_clone_term_upper($term->name))
         );
         ++$index;
     }
@@ -1178,7 +1183,7 @@ function vitech_clone_replace_product_section_headings(string $html, array $term
             ++$index;
 
             return $matches[1]
-                . esc_html(mb_strtoupper($term->name))
+                . esc_html(vitech_clone_term_upper($term->name))
                 . $matches[3]
                 . esc_url(get_term_link($term))
                 . $matches[5];
@@ -1214,7 +1219,7 @@ function vitech_clone_replace_home_category_labels(string $html, array $terms): 
     $index = 0;
     foreach ($source_labels as $label) {
         $term = $terms[$index % count($terms)];
-        $html = str_replace($label, esc_html(mb_strtoupper($term->name)), $html);
+        $html = str_replace($label, esc_html(vitech_clone_term_upper($term->name)), $html);
         ++$index;
     }
 
@@ -1333,7 +1338,7 @@ function vitech_clone_header_product_children(array $terms): array
     $children = [];
     foreach ($terms as $term) {
         $children[] = [
-            'title' => mb_strtoupper($term->name),
+            'title' => vitech_clone_term_upper($term->name),
             'url' => get_term_link($term),
         ];
     }
@@ -1348,7 +1353,7 @@ function vitech_clone_replace_mobile_product_menu(string $html, array $terms): s
         $items .= sprintf(
             "\n\t<li class=\"menu-item menu-item-type-taxonomy menu-item-object-product_cat\"><a href=\"%s\">%s</a></li>",
             esc_url(get_term_link($term)),
-            esc_html(mb_strtoupper($term->name))
+            esc_html(vitech_clone_term_upper($term->name))
         );
     }
 
@@ -1595,6 +1600,13 @@ HTML;
 
 // Escape nội dung động trước khi dùng làm replacement của preg_replace
 // để '$' hoặc '\' trong nội dung không bị hiểu là backreference.
+// Tên term trong DB có thể chứa entity (&amp;) — decode trước khi viết hoa
+// để tránh ra "&AMP;" rồi bị esc_html encode kép.
+function vitech_clone_term_upper(string $name): string
+{
+    return mb_strtoupper(wp_specialchars_decode($name, ENT_QUOTES));
+}
+
 function vitech_clone_preg_replacement(string $text): string
 {
     return strtr($text, ['\\' => '\\\\', '$' => '\\$']);
@@ -1602,11 +1614,11 @@ function vitech_clone_preg_replacement(string $text): string
 
 function vitech_clone_inject_product_category(string $html, WP_Term $term): string
 {
-    $name_upper = mb_strtoupper($term->name);
+    $name_upper = vitech_clone_term_upper($term->name);
     $site_name = get_bloginfo('name') ?: 'Thang Máy';
 
-    $html = preg_replace('#<title>.*?</title>#su', '<title>' . esc_html($term->name . ' - ' . $site_name) . '</title>', $html, 1) ?? $html;
-    $html = preg_replace('#<meta property="og:title" content="[^"]*"\s*/?>#su', '<meta property="og:title" content="' . esc_attr($term->name) . '" />', $html, 1) ?? $html;
+    $html = preg_replace('#<title>.*?</title>#su', '<title>' . esc_html(wp_specialchars_decode($term->name, ENT_QUOTES) . ' - ' . $site_name) . '</title>', $html, 1) ?? $html;
+    $html = preg_replace('#<meta property="og:title" content="[^"]*"\s*/?>#su', '<meta property="og:title" content="' . esc_attr(wp_specialchars_decode($term->name, ENT_QUOTES)) . '" />', $html, 1) ?? $html;
 
     $html = preg_replace(
         '#(<h1 class="shop-page-title is-xlarge">).*?(</h1>)#su',
@@ -1767,7 +1779,7 @@ function vitech_clone_inject_single_product(string $html, WP_Post $post, string 
     $terms = get_the_terms($post, 'product_cat');
     if (is_array($terms)) {
         foreach ($terms as $term) {
-            $term_links[] = '<a href="' . esc_url(get_term_link($term)) . '" rel="tag">' . esc_html(mb_strtoupper($term->name)) . '</a>';
+            $term_links[] = '<a href="' . esc_url(get_term_link($term)) . '" rel="tag">' . esc_html(vitech_clone_term_upper($term->name)) . '</a>';
         }
     }
     if ($term_links !== []) {

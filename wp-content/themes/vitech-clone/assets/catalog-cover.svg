@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="283" height="400" viewBox="0 0 283 400" role="img" aria-label="Catalogue">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b6e3f"/>
+      <stop offset="1" stop-color="#15b268"/>
+    </linearGradient>
+  </defs>
+  <rect width="283" height="400" fill="url(#g)"/>
+  <rect x="14" y="14" width="255" height="372" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2"/>
+  <g opacity="0.16" stroke="#ffffff" stroke-width="5" fill="none">
+    <rect x="170" y="240" width="80" height="130" rx="8"/>
+    <line x1="210" y1="240" x2="210" y2="370"/>
+  </g>
+  <text x="32" y="90" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="bold" fill="#ffffff">CATALOGUE</text>
+  <text x="32" y="126" font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#d7f3e4">THIẾT BỊ &amp; LINH KIỆN</text>
+  <text x="32" y="150" font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#d7f3e4">THANG MÁY</text>
+  <rect x="32" y="172" width="60" height="4" fill="#ffffff"/>
+</svg>
