@@ -198,6 +198,7 @@ function vitech_clone_inject_dynamic_data(string $html): string
     $phone_href = vitech_clone_proxy_phone_href($phone);
 
     $html = vitech_clone_replace_document_meta($html);
+    $html = vitech_clone_replace_source_banners($html);
 
     $home_sections_replaced = false;
     if ($terms && is_front_page()) {
@@ -715,22 +716,17 @@ function vitech_clone_replace_logo(string $html): string
     return $html;
 }
 
-// Các banner marketing của trang nguồn (slider, strip, banner phụ) mang thương
-// hiệu bên khác: thay bằng banner trung tính của theme, slider có thể đổi ảnh
-// qua trang Cấu hình (banner_image_1..3).
+// Banner slider trang chủ: mặc định giữ banner của trang nguồn; khi admin
+// upload/đặt ảnh trong trang Cấu hình (banner_image_1..3) thì thay tương ứng.
 function vitech_clone_replace_source_banners(string $html): string
 {
-    $assets = get_template_directory_uri() . '/assets';
-    $map = [
-        'cover1' => vitech_clone_option('banner_image_1', '') ?: $assets . '/banner-hero-1.svg',
-        'cover2' => vitech_clone_option('banner_image_2', '') ?: $assets . '/banner-hero-2.svg',
-        'cover-hau-mai' => vitech_clone_option('banner_image_3', '') ?: $assets . '/banner-hero-3.svg',
-        'banner2' => $assets . '/banner-strip.svg',
-        'banner3-1' => $assets . '/banner-strip.svg',
-        'banner\.jpg' => $assets . '/banner-strip.svg',
-        'banner-\d+x\d+\.jpg' => $assets . '/banner-strip.svg',
-        'giao-hang-mien-phi' => $assets . '/banner-side.svg',
-    ];
+    $map = [];
+    foreach (['cover1' => 'banner_image_1', 'cover2' => 'banner_image_2', 'cover-hau-mai' => 'banner_image_3'] as $fragment => $option) {
+        $url = vitech_clone_option($option, '');
+        if ($url !== '') {
+            $map[$fragment] = $url;
+        }
+    }
 
     foreach ($map as $fragment => $url) {
         $html = preg_replace(

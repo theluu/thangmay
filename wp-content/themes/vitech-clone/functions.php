@@ -253,13 +253,46 @@ function vitech_clone_config_fields(): array
         'company_map_embed_url' => ['label' => 'Google Maps (embed URL)', 'type' => 'url', 'help' => 'URL trong src của iframe Google Maps (Chia sẻ → Nhúng bản đồ), hiển thị ở trang Liên hệ.'],
         'fanpage_url' => ['label' => 'Fanpage Facebook', 'type' => 'url', 'help' => 'Link fanpage cho icon Facebook nổi và footer.'],
         'zalo_phone' => ['label' => 'Số Zalo', 'type' => 'text', 'help' => 'Dùng cho nút Zalo nổi (zalo.me/...). Bỏ trống sẽ dùng Hotline.'],
-        'banner_image_1' => ['label' => 'Banner slider 1', 'type' => 'url', 'help' => 'URL ảnh banner slider trang chủ (tỷ lệ ~2560x1181). Bỏ trống dùng banner mặc định.'],
-        'banner_image_2' => ['label' => 'Banner slider 2', 'type' => 'url', 'help' => ''],
-        'banner_image_3' => ['label' => 'Banner slider 3', 'type' => 'url', 'help' => ''],
+        'banner_image_1' => ['label' => 'Banner slider 1', 'type' => 'image', 'help' => 'Ảnh banner slider trang chủ (tỷ lệ ~2560x1181). Bỏ trống giữ banner hiện tại của template.'],
+        'banner_image_2' => ['label' => 'Banner slider 2', 'type' => 'image', 'help' => ''],
+        'banner_image_3' => ['label' => 'Banner slider 3', 'type' => 'image', 'help' => ''],
         'recaptcha_site_key' => ['label' => 'reCAPTCHA v3 Site key', 'type' => 'text', 'help' => 'Bỏ trống để tắt reCAPTCHA cho form liên hệ / báo giá / đánh giá.'],
         'recaptcha_secret_key' => ['label' => 'reCAPTCHA v3 Secret key', 'type' => 'text', 'help' => ''],
     ];
 }
+
+function vitech_clone_config_admin_assets(string $hook): void
+{
+    if ($hook !== 'toplevel_page_vitech-config') {
+        return;
+    }
+
+    wp_enqueue_media();
+    $script = <<<'JS'
+jQuery(function ($) {
+    $('.vitech-config-upload').on('click', function (e) {
+        e.preventDefault();
+        var target = $(this).data('target');
+        var frame = wp.media({
+            title: 'Chọn hoặc tải ảnh banner',
+            button: { text: 'Dùng ảnh này' },
+            library: { type: 'image' },
+            multiple: false
+        });
+        frame.on('select', function () {
+            var att = frame.state().get('selection').first().toJSON();
+            $('#' + target).val(att.url);
+            $('[data-preview="' + target + '"]').html(
+                '<img src="' + att.url + '" style="max-width:320px;height:auto;margin-top:8px;border:1px solid #ddd;border-radius:3px;" />'
+            );
+        });
+        frame.open();
+    });
+});
+JS;
+    wp_add_inline_script('jquery', $script);
+}
+add_action('admin_enqueue_scripts', 'vitech_clone_config_admin_assets');
 
 function vitech_clone_config_menu(): void
 {
@@ -289,7 +322,7 @@ function vitech_clone_render_config_page(): void
             $raw = isset($_POST[$key]) ? wp_unslash($_POST[$key]) : '';
             $value = match ($field['type']) {
                 'email' => sanitize_email($raw),
-                'url' => esc_url_raw(trim((string) $raw)),
+                'url', 'image' => esc_url_raw(trim((string) $raw)),
                 default => sanitize_text_field($raw),
             };
             set_theme_mod($key, $value);
@@ -306,8 +339,15 @@ function vitech_clone_render_config_page(): void
 
     foreach ($fields as $key => $field) {
         $value = get_theme_mod($key, '');
+        $value = is_string($value) ? $value : '';
         echo '<tr><th scope="row"><label for="' . esc_attr($key) . '">' . esc_html($field['label']) . '</label></th><td>';
-        echo '<input type="text" class="regular-text" id="' . esc_attr($key) . '" name="' . esc_attr($key) . '" value="' . esc_attr(is_string($value) ? $value : '') . '" />';
+        echo '<input type="text" class="regular-text" id="' . esc_attr($key) . '" name="' . esc_attr($key) . '" value="' . esc_attr($value) . '" />';
+        if ($field['type'] === 'image') {
+            echo ' <button type="button" class="button vitech-config-upload" data-target="' . esc_attr($key) . '">Chọn / tải ảnh</button>';
+            echo '<div class="vitech-config-preview" data-preview="' . esc_attr($key) . '">'
+                . ($value !== '' ? '<img src="' . esc_url($value) . '" style="max-width:320px;height:auto;margin-top:8px;border:1px solid #ddd;border-radius:3px;" />' : '')
+                . '</div>';
+        }
         if ($field['help'] !== '') {
             echo '<p class="description">' . esc_html($field['help']) . '</p>';
         }
