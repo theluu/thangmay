@@ -369,6 +369,9 @@ function vitech_clone_apply_theme_grey(string $html): string
 <style id="vitech-theme-style">
 /* Ẩn cụm nút liên hệ nổi mặc định của trang nguồn (thay bằng cụm riêng). */
 #button-contact-vr{display:none!important;}
+/* Banner nguồn là JPG nên không đi qua bộ đổi màu PNG; ép về tông ghi bạc bằng CSS. */
+img[src*="cover1.jpg"],img[src*="cover2.jpg"],img[src*="cover-hau-mai.jpg"],img[src*="banner.jpg"],
+.ux-slider img[src*="cover"],.slider img[src*="cover"],.banner img[src*="cover"]{filter:grayscale(1) brightness(1.08) contrast(.96)!important;}
 /* Khối giá kiểu meta.vn: giá cuối đỏ + giá niêm yết gạch ngang. */
 .vitech-price-wrapper .price{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:0;}
 .vitech-price-final{color:#d9251d;font-weight:700;font-size:1.05em;}
