@@ -196,6 +196,11 @@ if (str_contains($html, 'class="quick-view"')) {
 // injector trang cục bộ) sang ghi bạc. Đặt sau cùng để không bỏ sót chỗ nào.
 $html = vitech_clone_recolor_green_to_grey($html);
 
+// Bước cuối cùng: đổi thương hiệu VITECH (ở tiêu đề, mô tả, nội dung) sang tên
+// mới. Chỉ thay các biến thể viết hoa/hoa đầu nên không đụng tới tên miền
+// vitechlift.com (viết thường) trong URL/asset.
+$html = vitech_clone_rebrand($html);
+
 echo $html;
 
 function vitech_clone_recolor_green_to_grey(string $html): string
@@ -205,6 +210,18 @@ function vitech_clone_recolor_green_to_grey(string $html): string
         '#6b7280',
         $html
     );
+}
+
+function vitech_clone_rebrand(string $html): string
+{
+    // strtr thay theo khoá dài nhất trước và không thay chồng, nên câu slogan
+    // dài được xử lý trước, phần "VITECH" còn lại đổi sang thương hiệu mới.
+    return strtr($html, [
+        'VITECH – Vision and Smart Technogogy' => 'VILIFT – Công nghệ thang máy thông minh',
+        'VITECH - Vision and Smart Technogogy' => 'VILIFT - Công nghệ thang máy thông minh',
+        'VITECH' => 'VILIFT',
+        'Vitech' => 'Vilift',
+    ]);
 }
 
 function vitech_clone_inject_dynamic_data(string $html): string
@@ -461,18 +478,38 @@ function vitech_clone_inject_floating_contacts(string $html, string $phone, stri
             . '</a>';
     }
 
+    // Nút bật/tắt (chỉ hiện trên mobile): thu cụm liên hệ về 1 nút để không che
+    // lấp nút "Thêm vào giỏ" của các sản phẩm cột phải.
+    $toggle = '<button type="button" class="vitech-fab-toggle" aria-label="Liên hệ nhanh" aria-expanded="false">'
+        . '<svg class="vitech-fab-toggle__open" viewBox="0 0 24 24" width="26" height="26" fill="#fff"><path d="M12 3C6.5 3 2 6.9 2 11.7c0 2.2.9 4.2 2.5 5.7L4 21l3.9-1.5c1.3.5 2.7.7 4.1.7 5.5 0 10-3.9 10-8.7S17.5 3 12 3z"/></svg>'
+        . '<svg class="vitech-fab-toggle__close" viewBox="0 0 24 24" width="24" height="24" fill="#fff"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z"/></svg>'
+        . '</button>';
+
     $widget = <<<HTML
 <style id="vitech-fab-style">
-#vitech-fab{position:fixed;right:16px;bottom:20px;z-index:99990;display:flex;flex-direction:column;gap:12px;}
+#vitech-fab{position:fixed;right:16px;bottom:20px;z-index:99990;display:flex;flex-direction:column;gap:12px;align-items:center;}
 .vitech-fab{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:50%;box-shadow:0 4px 14px rgba(0,0,0,.25);position:relative;transition:transform .15s;animation:vitech-fab-pulse 2.5s infinite;}
 .vitech-fab:hover{transform:scale(1.08);}
 .vitech-fab__icon{display:flex;align-items:center;justify-content:center;}
 .vitech-fab__label{position:absolute;right:60px;white-space:nowrap;background:#333;color:#fff;padding:5px 10px;border-radius:5px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .15s;}
 .vitech-fab:hover .vitech-fab__label{opacity:1;}
+.vitech-fab-toggle{display:none;align-items:center;justify-content:center;width:52px;height:52px;padding:0;border:none;cursor:pointer;border-radius:50%;background:#e53935;box-shadow:0 4px 14px rgba(0,0,0,.28);animation:vitech-fab-pulse 2.5s infinite;order:99;}
+.vitech-fab-toggle__close{display:none;}
 @keyframes vitech-fab-pulse{0%{box-shadow:0 4px 14px rgba(0,0,0,.25),0 0 0 0 rgba(0,0,0,.18);}70%{box-shadow:0 4px 14px rgba(0,0,0,.25),0 0 0 12px rgba(0,0,0,0);}100%{box-shadow:0 4px 14px rgba(0,0,0,.25),0 0 0 0 rgba(0,0,0,0);}}
-@media(max-width:600px){#vitech-fab{right:12px;bottom:14px;gap:10px;}.vitech-fab{width:46px;height:46px;}}
+@media(max-width:600px){
+#vitech-fab{right:12px;bottom:14px;gap:10px;}
+.vitech-fab{width:46px;height:46px;animation:none;}
+.vitech-fab__label{display:none!important;}
+.vitech-fab-toggle{display:flex;}
+#vitech-fab .vitech-fab{display:none;}
+#vitech-fab.is-open .vitech-fab{display:flex;}
+#vitech-fab.is-open .vitech-fab-toggle{background:#333;animation:none;}
+#vitech-fab.is-open .vitech-fab-toggle__open{display:none;}
+#vitech-fab.is-open .vitech-fab-toggle__close{display:flex;}
+}
 </style>
-<div id="vitech-fab">$items</div>
+<div id="vitech-fab">$items$toggle</div>
+<script>(function(){var f=document.getElementById("vitech-fab");if(!f)return;var t=f.querySelector(".vitech-fab-toggle");if(!t)return;t.addEventListener("click",function(e){e.stopPropagation();var open=f.classList.toggle("is-open");t.setAttribute("aria-expanded",open?"true":"false");});document.addEventListener("click",function(e){if(f.classList.contains("is-open")&&!f.contains(e.target))f.classList.remove("is-open");});})();</script>
 HTML;
 
     if (stripos($html, '</body>') !== false) {
