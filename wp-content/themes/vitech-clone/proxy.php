@@ -398,14 +398,17 @@ img[src*="cover1.jpg"],img[src*="cover2.jpg"],img[src*="cover-hau-mai.jpg"],img[
 .badge-container .vitech-badge-sale{margin:0;display:table;}
 .badge-container .vitech-badge-sale span,.badge-container .vitech-badge-sale .badge-inner{background:#d9251d!important;color:#fff!important;border-radius:0 0 8px 0;padding:4px 9px;font-weight:700;font-size:13px;line-height:1;display:inline-block;}
 /* Nút Mua hàng (giỏ hàng) dẫn tới trang chi tiết. */
-.rt_add_to_cart{display:grid!important;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch;}
+.rt_add_to_cart{display:grid!important;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch;height:auto!important;}
 .rt_add_to_cart .hotline_sp_tv,.rt_add_to_cart .cart_sp_tv{float:none!important;width:auto!important;margin:0!important;display:flex!important;}
 .rt_add_to_cart .hotline_sp_tv a,.rt_add_to_cart .cart_sp_tv a{min-height:38px;width:100%;display:inline-flex!important;align-items:center;justify-content:center;gap:6px;text-align:center;line-height:1.2;border-radius:6px;padding:8px 10px;white-space:nowrap;}
 .rt_add_to_cart .cart_sp_tv .vitech-buy{background:#d9251d!important;color:#fff!important;font-weight:600;transition:background .2s;position:relative;}
 .rt_add_to_cart .cart_sp_tv .vitech-buy:hover{background:#b71c14!important;color:#fff!important;}
 .rt_add_to_cart .cart_sp_tv .vitech-buy::before,.rt_add_to_cart .cart_sp_tv .vitech-buy::after{display:none!important;content:none!important;background:none!important;}
 .rt_add_to_cart .cart_sp_tv .vitech-buy i{font-size:.95em;position:static;line-height:1;}
-@media(max-width:480px){.rt_add_to_cart{grid-template-columns:1fr;}.rt_add_to_cart .hotline_sp_tv a,.rt_add_to_cart .cart_sp_tv a{white-space:normal;}}
+@media(max-width:480px){.rt_add_to_cart{grid-template-columns:1fr;}.rt_add_to_cart .hotline_sp_tv a,.rt_add_to_cart .cart_sp_tv a{white-space:normal;}
+/* Card thu gọn chiều cao cố định + cắt nội dung, khiến nút "Thêm vào giỏ" xếp
+   dọc bị che mất. Cho phần chữ tự giãn để hiện đủ 2 nút. */
+.product-small .box-text{height:auto!important;overflow:visible!important;padding-bottom:14px;}}
 </style>
 CSS;
 
