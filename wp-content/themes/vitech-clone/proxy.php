@@ -192,7 +192,20 @@ if (str_contains($html, 'class="quick-view"')) {
     $html = str_replace('</body>', $quickview_script . '</body>', $html);
 }
 
+// Bước cuối: đổi toàn bộ màu xanh lá chủ đạo còn sót (từ HTML nguồn lẫn các
+// injector trang cục bộ) sang ghi bạc. Đặt sau cùng để không bỏ sót chỗ nào.
+$html = vitech_clone_recolor_green_to_grey($html);
+
 echo $html;
+
+function vitech_clone_recolor_green_to_grey(string $html): string
+{
+    return str_ireplace(
+        ['#159158', '#0B9344', 'rgb(21, 145, 88)', 'rgb(21,145,88)'],
+        '#6b7280',
+        $html
+    );
+}
 
 function vitech_clone_inject_dynamic_data(string $html): string
 {
@@ -251,9 +264,215 @@ function vitech_clone_inject_dynamic_data(string $html): string
     $html = preg_replace('/https:\/\/zalo\.me\/' . preg_quote($phone, '/') . '/u', 'https://zalo.me/' . preg_replace('/[^0-9]/', '', $phone), $html);
     $html = preg_replace('/\'' . preg_quote($phone, '/') . '\':/u', '\'' . preg_replace('/[^0-9]/', '', $phone) . '\':', $html);
     $html = vitech_clone_apply_site_config($html, $phone, $phone_href);
+    $html = vitech_clone_apply_theme_grey($html);
+    $html = vitech_clone_inject_floating_contacts($html, $phone, $phone_href);
+    $html = vitech_clone_inject_cart_script($html);
     $html = vitech_clone_inject_admin_toolbar($html);
 
     return $html;
+}
+
+// Giỏ hàng phía client (localStorage): nút "Thêm vào giỏ", đếm số trên icon
+// giỏ ở header, và render + xử lý trang /gio-hang/.
+function vitech_clone_inject_cart_script(string $html): string
+{
+    $cart_url = esc_url(home_url('/gio-hang/'));
+    $home_url = esc_url(home_url('/'));
+
+    $script = <<<HTML
+<style id="vitech-cart-style">
+.vitech-toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(20px);background:#1b1f24;color:#fff;padding:11px 18px;border-radius:8px;font-size:14px;z-index:100000;opacity:0;transition:opacity .3s,transform .3s;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:90vw;}
+.vitech-toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.rt_add_to_cart .cart_sp_tv .vitech-add-cart{cursor:pointer;}
+</style>
+<script id="vitech-cart-js">
+(function(){
+  var KEY="vitech_cart", CART_URL="{$cart_url}", HOME="{$home_url}";
+  function read(){try{var v=JSON.parse(localStorage.getItem(KEY));return Array.isArray(v)?v:[];}catch(e){return [];}}
+  function write(items){try{localStorage.setItem(KEY,JSON.stringify(items));}catch(e){}updateBadges();}
+  function count(){return read().reduce(function(s,i){return s+(parseInt(i.qty,10)||1);},0);}
+  function findIndex(items,id){for(var i=0;i<items.length;i++){if(String(items[i].id)===String(id))return i;}return -1;}
+  function add(p){var items=read();var idx=findIndex(items,p.id);if(idx>-1){items[idx].qty=(parseInt(items[idx].qty,10)||1)+1;}else{items.push({id:p.id,name:p.name,price:p.price,image:p.image,url:p.url,qty:1});}write(items);}
+  function setQty(id,q){var items=read();var idx=findIndex(items,id);if(idx>-1){items[idx].qty=Math.max(1,Math.min(999,q));}write(items);}
+  function remove(id){write(read().filter(function(i){return String(i.id)!==String(id);}));}
+  function clear(){try{localStorage.removeItem(KEY);}catch(e){}updateBadges();}
+  function esc(s){var d=document.createElement("div");d.textContent=(s==null?"":String(s));return d.innerHTML;}
+  function updateBadges(){var c=count();var els=document.querySelectorAll(".icon-shopping-cart");for(var i=0;i<els.length;i++){els[i].setAttribute("data-icon-label",c);}}
+  function toast(msg){var t=document.createElement("div");t.className="vitech-toast";t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.classList.add("show");},10);setTimeout(function(){t.classList.remove("show");setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},350);},2200);}
+
+  function init(){
+    var links=document.querySelectorAll(".header-cart-link");
+    for(var i=0;i<links.length;i++){links[i].setAttribute("href",CART_URL);links[i].addEventListener("click",function(e){e.preventDefault();window.location.href=CART_URL;});}
+    updateBadges();
+
+    document.addEventListener("click",function(e){
+      var btn=e.target.closest?e.target.closest(".vitech-add-cart"):null;
+      if(!btn)return;
+      e.preventDefault();
+      add({id:btn.getAttribute("data-cart-id"),name:btn.getAttribute("data-cart-name"),price:btn.getAttribute("data-cart-price"),image:btn.getAttribute("data-cart-image"),url:btn.getAttribute("data-cart-url")});
+      toast("Đã thêm vào giỏ: "+btn.getAttribute("data-cart-name"));
+    });
+
+    var app=document.getElementById("vitech-cart-app");
+    if(!app)return;
+    var formWrap=document.getElementById("vitech-order-form-wrap");
+    if(document.querySelector(".vitech-form-notice--success")){clear();}
+    function render(){
+      var items=read();
+      if(items.length===0){
+        app.innerHTML='<p class="vitech-cart__empty">'+esc(app.getAttribute("data-empty"))+' <a href="'+HOME+'">Tiếp tục mua hàng</a></p>';
+        if(formWrap)formWrap.hidden=true;
+        return;
+      }
+      var rows="";
+      for(var j=0;j<items.length;j++){var it=items[j];
+        rows+='<tr data-id="'+esc(it.id)+'">'+
+          '<td><div class="vitech-cart__prod"><img src="'+esc(it.image)+'" alt=""><a href="'+esc(it.url)+'">'+esc(it.name)+'</a></div></td>'+
+          '<td class="vitech-cart__price">'+esc(it.price||"Liên hệ")+'</td>'+
+          '<td class="vitech-cart__qty"><button type="button" class="vitech-qty-dec">−</button><span>'+(parseInt(it.qty,10)||1)+'</span><button type="button" class="vitech-qty-inc">+</button></td>'+
+          '<td><button type="button" class="vitech-cart-remove" title="Xóa">✕</button></td>'+
+        '</tr>';
+      }
+      app.innerHTML='<table class="vitech-cart__table"><thead><tr><th>Sản phẩm</th><th>Giá</th><th>Số lượng</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+      if(formWrap)formWrap.hidden=false;
+    }
+    app.addEventListener("click",function(e){
+      var tr=e.target.closest?e.target.closest("tr[data-id]"):null;if(!tr)return;var id=tr.getAttribute("data-id");
+      if(e.target.closest(".vitech-qty-inc")){var a=read();var ai=findIndex(a,id);setQty(id,(ai>-1?(parseInt(a[ai].qty,10)||1):1)+1);render();}
+      else if(e.target.closest(".vitech-qty-dec")){var b=read();var bi=findIndex(b,id);setQty(id,(bi>-1?(parseInt(b[bi].qty,10)||1):1)-1);render();}
+      else if(e.target.closest(".vitech-cart-remove")){remove(id);render();}
+    });
+    var form=formWrap?formWrap.querySelector("form"):null;
+    if(form){form.addEventListener("submit",function(){var h=form.querySelector("input[name='vitech_cart_items']");if(h)h.value=JSON.stringify(read());});}
+    render();
+  }
+  if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",init);}else{init();}
+})();
+</script>
+HTML;
+
+    if (stripos($html, '</body>') !== false) {
+        return str_ireplace('</body>', $script . '</body>', $html);
+    }
+
+    return $html . $script;
+}
+
+// Đổi tông màu chủ đạo xanh lá của trang nguồn sang ghi bạc, và bơm style cho
+// khối giá mới (giá niêm yết gạch ngang, badge % giảm, nút Mua hàng).
+function vitech_clone_apply_theme_grey(string $html): string
+{
+    // (Việc đổi hex xanh → ghi chạy ở bước cuối cùng trước khi xuất, xem
+    // vitech_clone_recolor_green_to_grey, để bắt cả style do các injector
+    // trang cục bộ chèn sau.)
+    $style = <<<CSS
+<style id="vitech-theme-style">
+/* Ẩn cụm nút liên hệ nổi mặc định của trang nguồn (thay bằng cụm riêng). */
+#button-contact-vr{display:none!important;}
+/* Khối giá kiểu meta.vn: giá cuối đỏ + giá niêm yết gạch ngang. */
+.vitech-price-wrapper .price{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:0;}
+.vitech-price-final{color:#d9251d;font-weight:700;font-size:1.05em;}
+.vitech-price-regular{color:#8a929c;text-decoration:line-through;font-size:.9em;font-weight:400;}
+/* Badge % giảm ở góc ảnh (theme ẩn .badge-container mặc định nên bật lại). */
+.badge-container.vitech-has-badge{display:block!important;}
+.badge-container .vitech-badge-sale{margin:0;display:table;}
+.badge-container .vitech-badge-sale span,.badge-container .vitech-badge-sale .badge-inner{background:#d9251d!important;color:#fff!important;border-radius:0 0 8px 0;padding:4px 9px;font-weight:700;font-size:13px;line-height:1;display:inline-block;}
+/* Nút Mua hàng (giỏ hàng) dẫn tới trang chi tiết. */
+.rt_add_to_cart .cart_sp_tv .vitech-buy{display:inline-flex!important;align-items:center;justify-content:center;gap:6px;background:#d9251d!important;color:#fff!important;padding:7px 14px;border-radius:6px;font-weight:600;transition:background .2s;position:relative;}
+.rt_add_to_cart .cart_sp_tv .vitech-buy:hover{background:#b71c14!important;color:#fff!important;}
+.rt_add_to_cart .cart_sp_tv .vitech-buy::before,.rt_add_to_cart .cart_sp_tv .vitech-buy::after{display:none!important;content:none!important;background:none!important;}
+.rt_add_to_cart .cart_sp_tv .vitech-buy i{font-size:.95em;position:static;}
+</style>
+CSS;
+
+    if (stripos($html, '</head>') !== false) {
+        return str_ireplace('</head>', $style . '</head>', $html);
+    }
+
+    return $style . $html;
+}
+
+// Cụm nút liên hệ nổi (góc phải dưới): Gọi điện, Messenger, Zalo, TikTok —
+// theo tham chiếu hafele-vn.com. Kênh nào chưa cấu hình thì ẩn.
+function vitech_clone_inject_floating_contacts(string $html, string $phone, string $phone_href): string
+{
+    $buttons = [];
+
+    if ($phone !== '') {
+        $buttons[] = [
+            'href' => $phone_href,
+            'label' => 'Gọi điện',
+            'bg' => '#e53935',
+            'icon' => '<svg viewBox="0 0 24 24" width="24" height="24" fill="#fff"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.4 0 .7-.2 1l-2.3 2.2z"/></svg>',
+        ];
+    }
+
+    $messenger = trim(vitech_clone_option('messenger_username', ''));
+    if ($messenger !== '') {
+        $buttons[] = [
+            'href' => 'https://m.me/' . ltrim($messenger, '/'),
+            'label' => 'Chat Facebook',
+            'bg' => 'linear-gradient(135deg,#00c6ff,#0084ff 60%,#a033ff)',
+            'target' => '_blank',
+            'icon' => '<svg viewBox="0 0 24 24" width="24" height="24" fill="#fff"><path d="M12 2C6.3 2 2 6.2 2 11.6c0 2.9 1.3 5.5 3.3 7.2v3.5l3.1-1.7c.8.2 1.7.3 2.6.3 5.7 0 10-4.2 10-9.6C21 6.2 17.7 2 12 2zm1 12.9l-2.5-2.7-4.9 2.7 5.4-5.7 2.6 2.7 4.8-2.7-5.4 5.7z"/></svg>',
+        ];
+    }
+
+    $zalo = preg_replace('/[^0-9]/', '', vitech_clone_option('zalo_phone', $phone));
+    if ($zalo !== '') {
+        $buttons[] = [
+            'href' => 'https://zalo.me/' . $zalo,
+            'label' => 'Zalo',
+            'bg' => '#0068ff',
+            'target' => '_blank',
+            'icon' => '<span style="font-weight:800;font-size:13px;letter-spacing:-.5px;color:#fff;">Zalo</span>',
+        ];
+    }
+
+    $tiktok = trim(vitech_clone_option('tiktok_url', ''));
+    if ($tiktok !== '') {
+        $buttons[] = [
+            'href' => $tiktok,
+            'label' => 'TikTok',
+            'bg' => '#111',
+            'target' => '_blank',
+            'icon' => '<svg viewBox="0 0 24 24" width="22" height="22" fill="#fff"><path d="M16.5 2c.3 2.2 1.6 3.7 3.7 3.9v2.4c-1.2.1-2.3-.3-3.5-1v6.6c0 4-3.3 6.6-6.9 5.7-3-.7-4.4-4-3.3-6.8.8-2.1 3-3.3 5.3-3v2.6c-.4-.1-.8-.2-1.2-.1-1.3.1-2.2 1.2-2 2.6.1 1.2 1.2 2 2.5 1.9 1.3-.1 2.1-1.1 2.1-2.6V2h3.3z"/></svg>',
+        ];
+    }
+
+    if ($buttons === []) {
+        return $html;
+    }
+
+    $items = '';
+    foreach ($buttons as $b) {
+        $target = isset($b['target']) ? ' target="' . esc_attr($b['target']) . '" rel="noopener"' : '';
+        $items .= '<a class="vitech-fab" href="' . esc_url($b['href']) . '"' . $target
+            . ' style="background:' . esc_attr($b['bg']) . ';" aria-label="' . esc_attr($b['label']) . '" title="' . esc_attr($b['label']) . '">'
+            . '<span class="vitech-fab__icon">' . $b['icon'] . '</span>'
+            . '<span class="vitech-fab__label">' . esc_html($b['label']) . '</span>'
+            . '</a>';
+    }
+
+    $widget = <<<HTML
+<style id="vitech-fab-style">
+#vitech-fab{position:fixed;right:16px;bottom:20px;z-index:99990;display:flex;flex-direction:column;gap:12px;}
+.vitech-fab{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:50%;box-shadow:0 4px 14px rgba(0,0,0,.25);position:relative;transition:transform .15s;animation:vitech-fab-pulse 2.5s infinite;}
+.vitech-fab:hover{transform:scale(1.08);}
+.vitech-fab__icon{display:flex;align-items:center;justify-content:center;}
+.vitech-fab__label{position:absolute;right:60px;white-space:nowrap;background:#333;color:#fff;padding:5px 10px;border-radius:5px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .15s;}
+.vitech-fab:hover .vitech-fab__label{opacity:1;}
+@keyframes vitech-fab-pulse{0%{box-shadow:0 4px 14px rgba(0,0,0,.25),0 0 0 0 rgba(0,0,0,.18);}70%{box-shadow:0 4px 14px rgba(0,0,0,.25),0 0 0 12px rgba(0,0,0,0);}100%{box-shadow:0 4px 14px rgba(0,0,0,.25),0 0 0 0 rgba(0,0,0,0);}}
+@media(max-width:600px){#vitech-fab{right:12px;bottom:14px;gap:10px;}.vitech-fab{width:46px;height:46px;}}
+</style>
+<div id="vitech-fab">$items</div>
+HTML;
+
+    if (stripos($html, '</body>') !== false) {
+        return str_ireplace('</body>', $widget . '</body>', $html);
+    }
+
+    return $html . $widget;
 }
 
 function vitech_clone_replace_public_forms(string $html): string
@@ -285,36 +504,64 @@ function vitech_clone_replace_first_cf7_form(string $html, string $form): string
 function vitech_clone_render_public_form(string $type): string
 {
     $is_quote = $type === 'quote';
+    $is_order = $type === 'order';
     $notice = vitech_clone_form_notice();
-    $action = esc_url(home_url(add_query_arg([], $_SERVER['REQUEST_URI'] ?? ($is_quote ? '/yeu-cau-bao-gia/' : '/lien-he/'))));
+    $default_path = $is_quote ? '/yeu-cau-bao-gia/' : ($is_order ? '/gio-hang/' : '/lien-he/');
+    $action = esc_url(home_url(add_query_arg([], $_SERVER['REQUEST_URI'] ?? $default_path)));
     $nonce = wp_create_nonce('vitech_form_submit_' . $type);
-    $title = $is_quote ? 'Yêu cầu báo giá' : 'Liên hệ tư vấn';
-    $message_placeholder = $is_quote ? 'Nhu cầu báo giá: loại thang, tải trọng, số tầng, địa điểm...' : 'Nội dung cần tư vấn';
-    $button = $is_quote ? 'Gửi yêu cầu báo giá' : 'Gửi liên hệ';
+    $message_placeholder = $is_quote
+        ? 'Nhu cầu báo giá: loại thang, tải trọng, số tầng, địa điểm...'
+        : ($is_order ? 'Ghi chú thêm cho đơn hàng (địa chỉ nhận, thời gian...)' : 'Nội dung cần tư vấn');
+    $button = $is_quote ? 'Gửi yêu cầu báo giá' : ($is_order ? 'Đặt hàng ngay' : 'Gửi liên hệ');
+    $message_required = !$is_order;
+
+    // Sản phẩm chọn sẵn khi bấm "Mua hàng" trên card (?vitech_product=Tên).
+    $preselect = isset($_GET['vitech_product']) ? sanitize_text_field(wp_unslash($_GET['vitech_product'])) : '';
 
     $product_options = '';
+    $preselect_found = false;
     if ($is_quote && function_exists('wc_get_products')) {
         $products = wc_get_products([
             'status' => 'publish',
-            'limit' => 20,
+            'limit' => 50,
             'orderby' => 'name',
             'order' => 'ASC',
         ]);
 
         foreach ($products as $product) {
             if ($product instanceof WC_Product) {
-                $product_options .= '<option value="' . esc_attr($product->get_name()) . '">' . esc_html($product->get_name()) . '</option>';
+                $name = $product->get_name();
+                $is_sel = ($preselect !== '' && $name === $preselect);
+                if ($is_sel) {
+                    $preselect_found = true;
+                }
+                $product_options .= '<option value="' . esc_attr($name) . '"' . ($is_sel ? ' selected' : '') . '>' . esc_html($name) . '</option>';
             }
         }
     }
+    // Nếu sản phẩm chọn sẵn không nằm trong danh sách thì vẫn thêm vào đầu.
+    if ($preselect !== '' && !$preselect_found) {
+        $product_options = '<option value="' . esc_attr($preselect) . '" selected>' . esc_html($preselect) . '</option>' . $product_options;
+    }
 
+    $default_option = '<option value=""' . ($preselect === '' ? ' selected' : '') . '>Chọn sản phẩm quan tâm</option>';
     $product_field = $is_quote
-        ? '<span class="wpcf7-form-control-wrap" data-name="vitech_product"><select class="wpcf7-form-control wpcf7-select" name="vitech_product"><option value="">Chọn sản phẩm quan tâm</option>' . $product_options . '</select></span><br />'
+        ? '<span class="wpcf7-form-control-wrap" data-name="vitech_product"><select class="wpcf7-form-control wpcf7-select" name="vitech_product">' . $default_option . $product_options . '</select></span><br />'
+        : '';
+
+    // Điền sẵn nội dung đặt mua khi đến từ nút "Mua hàng".
+    $message_prefill = ($is_quote && $preselect !== '')
+        ? esc_textarea('Tôi muốn đặt mua sản phẩm: ' . $preselect . '. Vui lòng liên hệ tư vấn giá và đặt hàng.')
         : '';
 
     $recaptcha_field = vitech_clone_recaptcha_enabled_for($type)
         ? '<input type="hidden" name="vitech_recaptcha_token" value="" data-recaptcha-action="' . esc_attr(vitech_clone_recaptcha_action($type)) . '" />'
         : '';
+
+    // Đơn đặt hàng: ghi chú không bắt buộc + field ẩn chứa JSON giỏ hàng (JS điền).
+    $message_required_attr = $message_required ? ' required aria-required="true"' : '';
+    $message_star = $message_required ? ' *' : '';
+    $cart_field = $is_order ? '<input type="hidden" name="vitech_cart_items" value="" />' : '';
 
     return <<<HTML
 <div class="wpcf7 vitech-local-form-wrap">
@@ -329,8 +576,8 @@ function vitech_clone_render_public_form(string $type): string
 <span class="wpcf7-form-control-wrap" data-name="vitech_name"><input size="40" class="wpcf7-form-control wpcf7-text wpcf7-validates-as-required" required aria-required="true" placeholder="Họ và tên *" value="" type="text" name="vitech_name" /></span><br />
 <span class="wpcf7-form-control-wrap" data-name="vitech_email"><input size="40" class="wpcf7-form-control wpcf7-email wpcf7-validates-as-required wpcf7-text wpcf7-validates-as-email" required aria-required="true" placeholder="Email *" value="" type="email" name="vitech_email" /></span><br />
 <span class="wpcf7-form-control-wrap" data-name="vitech_phone"><input size="40" class="wpcf7-form-control wpcf7-tel wpcf7-validates-as-required wpcf7-text wpcf7-validates-as-tel" required aria-required="true" placeholder="Số điện thoại *" value="" type="tel" name="vitech_phone" /></span><br />
-{$product_field}<span class="wpcf7-form-control-wrap" data-name="vitech_message"><textarea cols="40" rows="10" class="wpcf7-form-control wpcf7-textarea wpcf7-validates-as-required" required aria-required="true" placeholder="{$message_placeholder} *" name="vitech_message"></textarea></span><br />
-{$recaptcha_field}<input class="wpcf7-form-control wpcf7-submit has-spinner" type="submit" value="{$button}" />
+{$product_field}<span class="wpcf7-form-control-wrap" data-name="vitech_message"><textarea cols="40" rows="10" class="wpcf7-form-control wpcf7-textarea"{$message_required_attr} placeholder="{$message_placeholder}{$message_star}" name="vitech_message">{$message_prefill}</textarea></span><br />
+{$cart_field}{$recaptcha_field}<input class="wpcf7-form-control wpcf7-submit has-spinner" type="submit" value="{$button}" />
 </div>
 </form>
 </div>
@@ -344,6 +591,48 @@ function vitech_clone_render_public_form(string $type): string
 .vitech-form-notice ul{margin:0;padding-left:18px;}
 .vitech-local-form select{width:100%;height:44px;margin-bottom:10px;border:1px solid #ddd;border-radius:3px;padding:0 10px;background:#fff;}
 .vitech-local-form input[type="submit"]{margin-bottom:0;}
+</style>
+HTML;
+}
+
+// Nội dung trang Giỏ hàng: khối JS render danh sách sản phẩm (từ localStorage)
+// + form đặt hàng. Thông báo (notice) đưa lên đầu để luôn hiển thị kể cả khi
+// giỏ trống (sau khi đặt hàng thành công).
+function vitech_clone_render_cart_app(): string
+{
+    $notice = vitech_clone_form_notice();
+    $form = vitech_clone_render_public_form('order');
+    $home = esc_url(home_url('/'));
+
+    return <<<HTML
+<div class="vitech-cart">
+{$notice}
+<div id="vitech-cart-app" data-empty="Giỏ hàng của bạn đang trống." data-home="{$home}">
+<p class="vitech-cart__loading">Đang tải giỏ hàng...</p>
+</div>
+<div id="vitech-order-form-wrap" class="vitech-order-form" hidden>
+<h3 class="vitech-cart__form-title">Thông tin đặt hàng</h3>
+{$form}
+</div>
+</div>
+<style>
+.vitech-cart{margin-top:16px;}
+.vitech-cart__table{width:100%;border-collapse:collapse;margin:0 0 8px;}
+.vitech-cart__table th,.vitech-cart__table td{padding:12px 10px;border-bottom:1px solid #e6e9ed;text-align:left;vertical-align:middle;}
+.vitech-cart__table th{font-size:13px;text-transform:uppercase;color:#6b7280;font-weight:700;}
+.vitech-cart__prod{display:flex;align-items:center;gap:12px;}
+.vitech-cart__prod img{width:56px;height:56px;object-fit:cover;border-radius:6px;flex:0 0 auto;}
+.vitech-cart__prod a{font-weight:600;color:#1b1f24;}
+.vitech-cart__price{color:#d9251d;font-weight:700;white-space:nowrap;}
+.vitech-cart__qty{white-space:nowrap;}
+.vitech-cart__qty button{width:30px;height:30px;border:1px solid #ddd;background:#f7f8f9;border-radius:5px;cursor:pointer;font-size:16px;line-height:1;}
+.vitech-cart__qty span{display:inline-block;min-width:34px;text-align:center;font-weight:600;}
+.vitech-cart-remove{border:0;background:none;color:#98a2b3;cursor:pointer;font-size:16px;}
+.vitech-cart-remove:hover{color:#d9251d;}
+.vitech-cart__empty{padding:24px 0;font-size:16px;color:#667085;}
+.vitech-cart__empty a{color:#6b7280;font-weight:700;text-decoration:underline;}
+.vitech-cart__form-title{margin:18px 0 6px;font-size:18px;}
+@media(max-width:600px){.vitech-cart__table th:nth-child(2),.vitech-cart__table td:nth-child(2){display:none;}.vitech-cart__prod img{width:44px;height:44px;}}
 </style>
 HTML;
 }
@@ -392,7 +681,7 @@ function vitech_clone_inject_local_page(string $html, WP_Post $page): string
         return vitech_clone_inject_news_listing($html);
     }
 
-    $allowed_pages = ['lien-he', 'yeu-cau-bao-gia'];
+    $allowed_pages = ['lien-he', 'yeu-cau-bao-gia', 'gio-hang'];
     // Trang Giới thiệu: mặc định hiển thị nguyên bản trang nguồn; khi admin
     // điền nội dung vào page local thì nội dung đó thay thế.
     if ($page->post_name === 'gioi-thieu' && trim($page->post_content) !== '') {
@@ -548,6 +837,8 @@ function vitech_clone_render_local_page_main(WP_Post $page): string
         $extra = vitech_clone_render_public_form('contact') . vitech_clone_render_contact_map($content);
     } elseif ($page->post_name === 'yeu-cau-bao-gia') {
         $extra = vitech_clone_render_public_form('quote');
+    } elseif ($page->post_name === 'gio-hang') {
+        $extra = vitech_clone_render_cart_app();
     }
 
     $edit_link = '';
@@ -1029,6 +1320,7 @@ function vitech_clone_dynamic_products(): array
             'title' => get_the_title(),
             'url' => get_permalink(),
             'price' => vitech_clone_price($post_id),
+            'price_parts' => vitech_clone_product_price_parts($post_id),
             'image' => is_string($image) && $image !== '' ? $image : vitech_clone_proxy_placeholder_image(),
         ];
     }
@@ -1068,6 +1360,7 @@ function vitech_clone_dynamic_woocommerce_products(): array
             'title' => $wc_product->get_name(),
             'url' => get_permalink($wc_product->get_id()),
             'price' => $price,
+            'price_parts' => vitech_clone_product_price_parts($wc_product->get_id()),
             'image' => is_string($image) && $image !== '' ? $image : vitech_clone_proxy_placeholder_image(),
         ];
     }
@@ -1093,6 +1386,44 @@ function vitech_clone_product_price_label(int $post_id): string
     }
 
     return vitech_clone_price($post_id);
+}
+
+// Format số tiền sạch từ WooCommerce (bỏ text screen-reader trong price_html).
+function vitech_clone_format_money(string $amount): string
+{
+    if (!function_exists('wc_price')) {
+        return $amount;
+    }
+
+    return trim(html_entity_decode(wp_strip_all_tags(wc_price($amount)), ENT_QUOTES, 'UTF-8'));
+}
+
+// Tách giá thành các phần để card hiển thị: giá cuối, giá niêm yết (gạch ngang),
+// % giảm. Dùng cho card sản phẩm (trang chủ + danh mục).
+function vitech_clone_product_price_parts(int $post_id): array
+{
+    $parts = ['final' => '', 'regular' => '', 'discount' => 0, 'has_sale' => false];
+
+    if (function_exists('wc_get_product')) {
+        $product = wc_get_product($post_id);
+        if ($product instanceof WC_Product && $product->get_price() !== '') {
+            $parts['final'] = vitech_clone_format_money($product->get_price());
+
+            $regular = (float) $product->get_regular_price();
+            $sale = (float) $product->get_price();
+            if ($product->is_on_sale() && $regular > $sale && $regular > 0) {
+                $parts['regular'] = vitech_clone_format_money($product->get_regular_price());
+                $parts['discount'] = (int) round(($regular - $sale) / $regular * 100);
+                $parts['has_sale'] = true;
+            }
+
+            return $parts;
+        }
+    }
+
+    $parts['final'] = vitech_clone_price($post_id);
+
+    return $parts;
 }
 
 function vitech_clone_replace_document_meta(string $html): string
@@ -1194,14 +1525,34 @@ function vitech_clone_render_proxy_product_card(array $product, int $position, s
     $title = esc_html($product['title']);
     $url = esc_url($product['url']);
     $image = esc_url($product['image']);
-    $price = esc_html($product['price']);
-    $phone_label = esc_html($phone);
     $phone_link = esc_url($phone_href);
+
+    $parts = $product['price_parts'] ?? ['final' => $product['price'] ?? '', 'regular' => '', 'discount' => 0, 'has_sale' => false];
+    $final = esc_html($parts['final']);
+    $has_sale = !empty($parts['has_sale']);
+
+    // Nút "Thêm vào giỏ": JS đọc data-* để thêm sản phẩm vào giỏ (localStorage),
+    // rồi khách vào trang /gio-hang/ để đặt hàng.
+    $title_attr = esc_attr($product['title']);
+    $price_attr = esc_attr($parts['final']);
+    $pid = (int) $product['id'];
+
+    $badge = '';
+    $badge_class = '';
+    $regular_html = '';
+    if ($has_sale) {
+        if ((int) $parts['discount'] > 0) {
+            $badge = '<div class="badge callout-flat vitech-badge-sale"><span>-' . (int) $parts['discount'] . '%</span></div>';
+            $badge_class = ' vitech-has-badge';
+        }
+        $regular_html = '<span class="vitech-price-regular">' . esc_html($parts['regular']) . '</span>';
+    }
 
     return <<<HTML
 <div class="$classes">
 	<div class="col-inner">
-<div class="badge-container absolute left top z-1">
+<div class="badge-container absolute left top z-1$badge_class">
+$badge
 </div>
 	<div class="product-small box ">
 		<div class="box-image">
@@ -1216,13 +1567,13 @@ function vitech_clone_render_proxy_product_card(array $product, int $position, s
 					</div><!-- box-image -->
 
 		<div class="box-text">
-            <div class="title-wrapper"><p class="name product-title woocommerce-loop-product__title"><a href="$url" class="woocommerce-LoopProduct-link woocommerce-loop-product__link">$title</a></p></div><div class="price-wrapper"><p class="price"><span>Giá : $price</span></p></div>
+            <div class="title-wrapper"><p class="name product-title woocommerce-loop-product__title"><a href="$url" class="woocommerce-LoopProduct-link woocommerce-loop-product__link">$title</a></p></div><div class="price-wrapper vitech-price-wrapper"><p class="price"><span class="vitech-price-final">$final</span>$regular_html</p></div>
                               <div class="rt_add_to_cart clearfix">
                 <div class="hotline_sp_tv">
                   <a href="$phone_link"><i class="fa-solid fa-phone"></i> Gọi tư vấn</a>
                 </div>
                 <div class="cart_sp_tv">
-                                          <a class="quick-view" data-prod="{$product['id']}" href="$url">Xem nhanh</a>                                                    </div>
+                                          <a class="vitech-buy vitech-add-cart" href="#" data-cart-id="$pid" data-cart-name="$title_attr" data-cart-price="$price_attr" data-cart-image="$image" data-cart-url="$url"><i class="fa-solid fa-cart-shopping"></i> Thêm vào giỏ</a>                                                    </div>
               </div>
 
         </div><!-- box-text -->
@@ -1833,6 +2184,7 @@ function vitech_clone_term_products(WP_Term $term): array
             'title' => get_the_title(),
             'url' => get_permalink(),
             'price' => $price,
+            'price_parts' => vitech_clone_product_price_parts($post_id),
             'image' => is_string($image) && $image !== '' ? $image : vitech_clone_proxy_placeholder_image(),
         ];
     }
