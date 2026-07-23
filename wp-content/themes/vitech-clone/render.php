@@ -13,16 +13,26 @@ $request_path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $request_query = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_QUERY);
 $request_path = '/' . ltrim((string) $request_path, '/');
 
-$asset_url = static function (string $url) use ($local_host, $source_host): string {
+$frozen_base = vitech_clone_frozen_base();
+$asset_url = static function (string $url) use ($source_host, $frozen_base): string {
+    // Idempotent: các khối preg_replace_callback bên dưới có thể quét lại
+    // và gọi lại closure này trên URL đã đóng băng rồi (frozen_base bắt đầu
+    // bằng /wp-content/ nên khớp chính regex quét đường dẫn tương đối phía
+    // dưới) — trả nguyên để tránh lồng frozen_base hai lần.
+    if (str_starts_with($url, $frozen_base . '/')) {
+        return $url;
+    }
     if (str_starts_with($url, '//vitechlift.com/')) {
         $url = 'https:' . $url;
     }
-
     if (str_starts_with($url, '/wp-content/') || str_starts_with($url, '/wp-includes/')) {
         $url = $source_host . $url;
     }
-
-    return $local_host . '/?vitech_asset=' . rawurlencode($url);
+    // Chỉ đóng băng asset của nguồn; URL khác giữ nguyên.
+    if (!str_starts_with($url, $source_host . '/')) {
+        return $url;
+    }
+    return $frozen_base . (string) parse_url($url, PHP_URL_PATH);
 };
 
 if (str_starts_with($request_path, '/wp-admin') || str_starts_with($request_path, '/wp-login.php')) {
@@ -60,39 +70,15 @@ if ($local_page instanceof WP_Post && $local_page->post_name === 'tin-tuc') {
 }
 $search_query = isset($_GET['s']) ? trim(sanitize_text_field(wp_unslash($_GET['s']))) : '';
 
-$source_url = $source_host . $request_path;
-if ($request_query) {
-    $source_url .= '?' . $request_query;
-}
+$snapshot_slug = vitech_clone_snapshot_slug($request_path, $search_query !== '');
+$snapshot_file = get_template_directory() . '/snapshots/' . $snapshot_slug . '.html';
+$html = is_readable($snapshot_file) ? (string) file_get_contents($snapshot_file) : '';
 
-$cache_key = 'vitech_clone_' . md5($source_url);
-$html = get_transient($cache_key);
-
-if (!is_string($html)) {
-    $response = wp_remote_get($source_url, [
-        'timeout' => 20,
-        'redirection' => 5,
-        'user-agent' => 'Mozilla/5.0 (compatible; ThangMayLocalClone/1.0)',
-        'headers' => [
-            'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        ],
-    ]);
-
-    if (is_wp_error($response)) {
-        status_header(502);
-        echo '<!doctype html><meta charset="utf-8"><title>Proxy error</title><p>Không lấy được trang nguồn.</p>';
-        exit;
-    }
-
-    $content_type = wp_remote_retrieve_header($response, 'content-type');
-    $html = wp_remote_retrieve_body($response);
-
-    if (stripos((string) $content_type, 'text/html') === false || $html === '') {
-        wp_safe_redirect($source_url);
-        exit;
-    }
-
-    set_transient($cache_key, $html, 15 * MINUTE_IN_SECONDS);
+if ($html === '') {
+    status_header(500);
+    echo '<!doctype html><meta charset="utf-8"><title>Thiếu snapshot</title>'
+        . '<p>Chưa có bản snapshot cho trang này. Chạy lại <code>tools/freeze.php</code>.</p>';
+    exit;
 }
 
 $html = preg_replace_callback(
