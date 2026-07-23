@@ -115,15 +115,25 @@ function vitech_clone_disable_public_canonical(): void
 }
 add_action('template_redirect', 'vitech_clone_disable_public_canonical', 1);
 
+function vitech_clone_frozen_base(): string
+{
+    return wp_make_link_relative(get_template_directory_uri()) . '/frozen';
+}
+
+// Khớp hệt fz_slug() trong tools/freeze.php.
+function vitech_clone_snapshot_slug(string $request_path, bool $is_search): string
+{
+    if ($is_search) return 'search';
+    $slug = trim($request_path, '/');
+    if ($slug === '') return 'home';
+    $slug = preg_replace('#[^a-z0-9/_-]#i', '-', $slug);
+    return str_replace('/', '-', strtolower($slug));
+}
+
 function vitech_clone_proxy_public_pages(): void
 {
     if (is_admin() || wp_doing_ajax() || wp_is_json_request()) {
         return;
-    }
-
-    if (isset($_GET['vitech_asset'])) {
-        require get_template_directory() . '/asset-proxy.php';
-        exit;
     }
 
     $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
@@ -139,7 +149,7 @@ function vitech_clone_proxy_public_pages(): void
         return;
     }
 
-    require get_template_directory() . '/proxy.php';
+    require get_template_directory() . '/render.php';
     exit;
 }
 add_action('template_redirect', 'vitech_clone_proxy_public_pages', 2);

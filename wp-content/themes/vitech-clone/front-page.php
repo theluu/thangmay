@@ -1,3 +1,3 @@
 <?php
 
-require get_template_directory() . '/proxy.php';
+require get_template_directory() . '/render.php';
