@@ -141,7 +141,8 @@ foreach (array_unique($fz_local_urls) as $u) {
     if ($html === '') { fwrite(STDERR, "CRAWL FAIL {$u} ({$code})\n"); continue; }
     preg_match_all('#[?&]vitech_asset=([^"\'\s>()]+)#', $html, $m);
     foreach ($m[1] as $enc) {
-        $sp = fz_src_path(rawurldecode($enc));
+        $dec = str_replace('\\/', '/', rawurldecode($enc));
+        $sp = fz_src_path($dec);
         if ($sp !== null) $queue[$sp] = true;
     }
     echo "crawl {$u}: +".count($m[1])." refs (queue ".count($queue).")\n";
