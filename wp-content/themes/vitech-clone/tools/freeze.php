@@ -60,12 +60,17 @@ foreach (get_posts(['post_type' => 'page', 'post_status' => 'publish', 'numberpo
 
 foreach ($targets as [$path, $is_search]) {
     $slug = fz_slug($is_search ? '/' : $path, $is_search);
+    $snap_file = "{$fz_snaps}/{$slug}.html";
+    if (file_exists($snap_file)) {
+        echo "snapshot {$slug} <= {$path}  SKIP (already exists)\n";
+        continue;
+    }
     [$code, $body] = fz_http_get(FZ_SOURCE . $path);
     if ($body === '' || stripos($body, '</html>') === false) {
         fwrite(STDERR, "SNAPSHOT FAIL {$path} (code {$code}, ".strlen($body)." bytes)\n");
         continue;
     }
-    file_put_contents("{$fz_snaps}/{$slug}.html", $body);
+    file_put_contents($snap_file, $body);
     echo "snapshot {$slug} <= {$path}  {$code}  ".strlen($body)." bytes\n";
     usleep(1200000); // 1.2s giữa các page để né WAF
 }
@@ -147,6 +152,63 @@ foreach (array_unique($fz_local_urls) as $u) {
     }
     echo "crawl {$u}: +".count($m[1])." refs (queue ".count($queue).")\n";
     usleep(800000);
+}
+
+// 2a-bis) Gom asset tham chiếu trực tiếp trong các snapshot shell (nguồn sự thật cho render.php).
+// Snapshot HTML là bản chụp thô từ vitechlift.com nên chứa src/href/srcset/url() trỏ thẳng nguồn,
+// khác với trang local (crawl ở trên) vốn đã được vitech_asset= hoá.
+function fz_extract_snapshot_refs(string $html): array {
+    $html = str_replace('\\/', '/', $html); // gỡ escape JSON (vd trong <script type="application/ld+json">)
+    $refs = [];
+
+    // Absolute / protocol-relative refs to the source host.
+    if (preg_match_all('#(?:https?:)?//vitechlift\.com/(?:wp-content|wp-includes)/[^"\'\s<>)]+#i', $html, $m)) {
+        foreach ($m[0] as $u) $refs[] = $u;
+    }
+
+    // Root-relative refs: /wp-content/... hoặc /wp-includes/... bên trong src=, href=, srcset=, url(...)
+    if (preg_match_all('#(?:src|href|srcset)=["\']([^"\']*(?:/wp-content/|/wp-includes/)[^"\']*)["\']#i', $html, $m)) {
+        foreach ($m[1] as $attr) {
+            // srcset có thể chứa nhiều "URL 300w" phân cách bởi dấu phẩy.
+            foreach (preg_split('#\s*,\s*#', $attr) as $entry) {
+                $entry = trim($entry);
+                if ($entry === '') continue;
+                $parts = preg_split('#\s+#', $entry);
+                $u = $parts[0] ?? '';
+                if ($u !== '' && preg_match('#(?:https?:)?//vitechlift\.com/(?:wp-content|wp-includes)/|^/(?:wp-content|wp-includes)/#i', $u)) {
+                    $refs[] = $u;
+                }
+            }
+        }
+    }
+
+    // url(...) trong <style>/inline CSS bên trong shell.
+    if (preg_match_all('#url\((["\']?)((?:https?:)?//vitechlift\.com/(?:wp-content|wp-includes)/[^)\'"]+|/(?:wp-content|wp-includes)/[^)\'"]+)\1\)#i', $html, $m)) {
+        foreach ($m[2] as $u) $refs[] = $u;
+    }
+
+    // Chuẩn hoá: bỏ query string + dấu phẩy/khoảng trắng thừa còn sót.
+    $out = [];
+    foreach ($refs as $u) {
+        $u = trim($u, " \t\n\r,");
+        if ($u === '') continue;
+        $u = preg_replace('~[?#].*$~', '', $u);
+        if ($u !== '') $out[] = $u;
+    }
+    return $out;
+}
+
+foreach (glob("{$fz_snaps}/*.html") as $snap_path) {
+    $html = (string) file_get_contents($snap_path);
+    if ($html === '') continue;
+    $refs = fz_extract_snapshot_refs($html);
+    $added = 0;
+    foreach ($refs as $ref) {
+        $abs = str_starts_with($ref, '/') ? FZ_SOURCE . $ref : $ref;
+        $sp = fz_src_path($abs);
+        if ($sp !== null && !isset($queue[$sp])) { $queue[$sp] = true; $added++; }
+    }
+    echo "shell-scan ".basename($snap_path).": +{$added} refs (queue ".count($queue).")\n";
 }
 
 // 2b) BFS: tải + xử lý từng asset; CSS đẩy thêm url() con vào queue.
