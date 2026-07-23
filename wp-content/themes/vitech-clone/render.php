@@ -122,6 +122,23 @@ $html = preg_replace_callback(
     $html
 );
 
+// Đóng băng asset load từ host NGOÀI vitechlift.com (mirror webrt + CDN
+// polyfill/fontawesome) -> frozen/_ext. Phải khớp danh sách trong
+// tools/freeze-ext.php. Query string (?ver=) giữ nguyên, nginx bỏ qua khi
+// phục vụ file tĩnh.
+$ext_base = $frozen_base . '/_ext/';
+foreach (['luan.webrt.net', 'son.webrt.vn', 'cdn.jsdelivr.net', 'use.fontawesome.com'] as $ext_host) {
+    $html = str_replace(
+        ['https://' . $ext_host . '/', 'http://' . $ext_host . '/', '//' . $ext_host . '/'],
+        $ext_base . $ext_host . '/',
+        $html
+    );
+}
+
+// Bỏ link khám phá oEmbed của nguồn (url= còn trỏ vitechlift.com dạng
+// mã hoá, không tải asset nào) cho sạch — trang tĩnh không cần oEmbed.
+$html = preg_replace('#<link[^>]+type=(["\'])(?:application/json|text/xml)\+oembed\1[^>]*>#i', '', $html) ?? $html;
+
 // Bỏ widget AI chat (Botpress) của trang nguồn.
 $html = preg_replace('#<script[^>]*src="[^"]*(?:botpress\.cloud|bpcontent\.cloud)[^"]*"[^>]*>\s*</script>\s*#i', '', $html) ?? $html;
 
