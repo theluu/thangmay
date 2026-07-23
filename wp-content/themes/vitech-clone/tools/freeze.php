@@ -70,3 +70,124 @@ foreach ($targets as [$path, $is_search]) {
     usleep(1200000); // 1.2s giữa các page để né WAF
 }
 echo "=== snapshots done: ".count(glob("{$fz_snaps}/*.html"))." files ===\n";
+
+// ===== 2) Đóng băng assets =====
+const FZ_FROZEN_BASE = '/wp-content/themes/vitech-clone/frozen'; // khớp vitech_clone_frozen_base()
+
+// src URL nguồn -> path /wp-content|/wp-includes (bỏ query); null nếu không phải asset nguồn.
+function fz_src_path(string $url): ?string {
+    if (str_starts_with($url, '//vitechlift.com/')) $url = 'https:' . $url;
+    $p = wp_parse_url($url);
+    if (!is_array($p) || !isset($p['host']) || stripos($p['host'], 'vitechlift.com') === false) return null;
+    $path = $p['path'] ?? '';
+    return preg_match('#^/(wp-content|wp-includes)/#', $path) ? $path : null;
+}
+
+// Copy từ asset-proxy.php: PNG ngả xanh -> grayscale + sáng nhẹ; ngược lại null.
+function fz_greyscale_if_green(string $data): ?string {
+    if (!function_exists('imagecreatefromstring')) return null;
+    $img = @imagecreatefromstring($data);
+    if (!$img) return null;
+    if (function_exists('imageistruecolor') && !imageistruecolor($img)) imagepalettetotruecolor($img);
+    $w = imagesx($img); $h = imagesy($img);
+    $sx = max(1, intdiv($w, 24)); $sy = max(1, intdiv($h, 24));
+    $sr = $sg = $sb = $n = 0;
+    for ($y = 0; $y < $h; $y += $sy) for ($x = 0; $x < $w; $x += $sx) {
+        $c = imagecolorat($img, $x, $y);
+        if ((($c >> 24) & 0x7F) > 100) continue;
+        $sr += ($c >> 16) & 0xFF; $sg += ($c >> 8) & 0xFF; $sb += $c & 0xFF; $n++;
+    }
+    if ($n === 0) { imagedestroy($img); return null; }
+    $ar = $sr / $n; $ag = $sg / $n; $ab = $sb / $n;
+    if (!($ag > $ar + 12 && $ag > $ab + 12)) { imagedestroy($img); return null; }
+    imagefilter($img, IMG_FILTER_GRAYSCALE);
+    imagefilter($img, IMG_FILTER_BRIGHTNESS, 35);
+    imagealphablending($img, false); imagesavealpha($img, true);
+    ob_start(); imagepng($img); $out = (string) ob_get_clean(); imagedestroy($img);
+    return $out !== '' ? $out : null;
+}
+
+// Resolve url() tương đối trong CSS -> URL nguồn tuyệt đối (copy asset-proxy.php).
+function fz_resolve_css_url(string $url, string $base_path): string {
+    if (preg_match('#^(data:|https?:|//|/wp-content/|/wp-includes/)#i', $url)) {
+        if (str_starts_with($url, '//vitechlift.com/')) return 'https:' . $url;
+        if (str_starts_with($url, '/wp-content/') || str_starts_with($url, '/wp-includes/')) return FZ_SOURCE . $url;
+        return $url;
+    }
+    $path = trailingslashit(dirname($base_path)) . $url;
+    $seg = [];
+    foreach (explode('/', $path) as $s) {
+        if ($s === '' || $s === '.') continue;
+        if ($s === '..') { array_pop($seg); continue; }
+        $seg[] = $s;
+    }
+    return FZ_SOURCE . '/' . implode('/', $seg);
+}
+
+// 2a) Gom tập asset thực sự được render (crawl trang local, còn ở chế độ proxy).
+$fz_local_urls = ['/', '/tin-tuc/', '/?s=thang+may'];
+$one = fn($t) => ($x = get_posts(['post_type' => $t, 'post_status' => 'publish', 'numberposts' => 1])) ? $x[0] : null;
+if ($pr = $one('product')) $fz_local_urls[] = wp_make_link_relative(get_permalink($pr));
+if ($po = $one('post'))    $fz_local_urls[] = wp_make_link_relative(get_permalink($po));
+$cats = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false, 'number' => 1]);
+if ($cats && !is_wp_error($cats)) $fz_local_urls[] = wp_make_link_relative(get_term_link($cats[0]));
+foreach (get_posts(['post_type' => 'page', 'post_status' => 'publish', 'numberposts' => -1]) as $p) {
+    $fz_local_urls[] = '/' . $p->post_name . '/';
+}
+
+$queue = []; // set path => true
+foreach (array_unique($fz_local_urls) as $u) {
+    [$code, $html] = fz_http_get(FZ_LOCAL . $u);
+    if ($html === '') { fwrite(STDERR, "CRAWL FAIL {$u} ({$code})\n"); continue; }
+    preg_match_all('#[?&]vitech_asset=([^"\'\s>()]+)#', $html, $m);
+    foreach ($m[1] as $enc) {
+        $sp = fz_src_path(rawurldecode($enc));
+        if ($sp !== null) $queue[$sp] = true;
+    }
+    echo "crawl {$u}: +".count($m[1])." refs (queue ".count($queue).")\n";
+    usleep(800000);
+}
+
+// 2b) BFS: tải + xử lý từng asset; CSS đẩy thêm url() con vào queue.
+$done = [];
+while ($queue) {
+    $path = array_key_first($queue);
+    unset($queue[$path]);
+    if (isset($done[$path])) continue;
+    $done[$path] = true;
+
+    [$code, $body] = fz_http_get(FZ_SOURCE . $path);
+    if ($body === '' || $code >= 400) { fwrite(STDERR, "ASSET FAIL {$path} ({$code})\n"); continue; }
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+    if ($ext === 'css') {
+        $body = str_ireplace(['#159158', '#0B9344'], ['#6b7280', '#6b7280'], $body);
+        $rewrite = function (array $m) use ($path, &$queue, $done) {
+            $u = trim($m[2]);
+            if ($u === '' || str_starts_with($u, 'data:')) return $m[0];
+            $abs = fz_resolve_css_url($u, $path);
+            $sp = fz_src_path($abs);
+            if ($sp === null) return $m[0]; // external: giữ nguyên
+            if (!isset($done[$sp])) $queue[$sp] = true;
+            return 'url(' . ($m[1] ?? '') . FZ_FROZEN_BASE . $sp . ($m[3] ?? '') . ')';
+        };
+        $body = preg_replace_callback('#url\((["\']?)([^)\'"]+)(["\']?)\)#', $rewrite, $body);
+        // @import "x"; dạng không dùng url()
+        $body = preg_replace_callback('#@import\s+(["\'])([^"\']+)\1#', function (array $m) use ($path, &$queue, $done) {
+            $abs = fz_resolve_css_url(trim($m[2]), $path);
+            $sp = fz_src_path($abs);
+            if ($sp === null) return $m[0];
+            if (!isset($done[$sp])) $queue[$sp] = true;
+            return '@import "' . FZ_FROZEN_BASE . $sp . '"';
+        }, $body);
+    } elseif ($ext === 'png') {
+        $re = fz_greyscale_if_green($body);
+        if (is_string($re) && $re !== '') $body = $re;
+    }
+
+    $target = $fz_frozen . $path;
+    wp_mkdir_p(dirname($target));
+    file_put_contents($target, $body);
+    usleep(250000); // né WAF cho asset
+}
+echo "=== frozen assets done: ".iterator_count(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($fz_frozen, FilesystemIterator::SKIP_DOTS)))." files ===\n";
